@@ -131,22 +131,20 @@ if uploaded_files:
                 
                 st.divider()
                 
-                # Üst Bilgi Kartı ve QR
                 ust_sol, ust_sag = st.columns([3, 1])
                 with ust_sol:
-                    st.success(f"**Uyum Skoru: %{urun['Uyum_Skoru']}** — AB Gümrük Onaylı & Doğrulanmış Ürün[cite: 8]")
+                    st.success(f"**Uyum Skoru: %{urun['Uyum_Skoru']}** — AB Gümrük Onaylı & Doğrulanmış Ürün")
                     st.markdown(f"### 🏷️ {urun['Urun_Adi']} ({urun['Urun_Kodu']})")
-                    st.markdown(f"**Sektör:** {urun['Sektor']} | **GTIN:** 0123456789012 | **Parti No:** LOT-2026-842[cite: 8, 9]")
+                    st.markdown(f"**Sektör:** {urun['Sektor']} | **GTIN:** 0123456789012 | **Parti No:** LOT-2026-842")
                 with ust_sag:
                     qr_metin = f"AB DPP PASAPORTU\nUrun: {urun['Urun_Adi']}\nKod: {urun['Urun_Kodu']}\nMensei: {urun['Hammadde_Mensei']}\nSertifika: {urun['Cevre_Sertifikasi']}\nSTATUS: ONAYLI"
                     qr = qrcode.QRCode(version=1, box_size=6, border=2)
                     qr.add_data(qr_metin)
                     qr.make(fit=True)
-                    st.image(qr.make_image(fill_color="black", back_color="white").get_image(), caption="GS1 Digital Link QR[cite: 8]", use_container_width=True)
+                    st.image(qr.make_image(fill_color="black", back_color="white").get_image(), caption="GS1 Digital Link QR", use_container_width=True)
                 
                 st.divider()
                 
-                # Detaylı Kurumsal Sekmeler (TürkPass tarzı zengin içerik)
                 detay_tab1, detay_tab2, detay_tab3, detay_tab4 = st.tabs([
                     "📦 Ürün ve Menşei Özeti", 
                     "🧬 Malzeme Bileşimi", 
@@ -157,15 +155,15 @@ if uploaded_files:
                 with detay_tab1:
                     c1, c2 = st.columns(2)
                     with c1:
-                        st.markdown(f"**Üretici / İhracatçı:** Türkiye Merkezli Üretim A.Ş.[cite: 9]")
+                        st.markdown(f"**Üretici / İhracatçı:** Türkiye Merkezli Üretim A.Ş.")
                         st.markdown(f"**Hammadde Menşei:** {urun['Hammadde_Mensei']}")
-                        st.markdown(f"**Üretim Tarihi:** 2026-06-01[cite: 8, 9]")
+                        st.markdown(f"**Üretim Tarihi:** 2026-06-01")
                     with c2:
                         tarih = urun['Sertifika_Bitis_Tarihi']
                         tarih_metni = tarih.strftime('%Y-%m-%d') if pd.notna(tarih) else "Süresiz"
                         st.markdown(f"**Çevre Sertifikası:** {urun['Cevre_Sertifikasi']}")
                         st.markdown(f"**Belge Geçerlilik Tarihi:** {tarih_metni}")
-                        st.markdown("**Platform Güvenliği:** RSA-SHA256 İmzalı[cite: 8, 9]")
+                        st.markdown("**Platform Güvenliği:** RSA-SHA256 İmzalı")
                         
                 with detay_tab2:
                     st.markdown("### 🔬 Ürün Bileşen Oranları (ESPR Uyumlu)")
@@ -177,18 +175,18 @@ if uploaded_files:
                     
                 with detay_tab3:
                     st.markdown("### 🌐 Tedarik Zinciri ve Süreç Takibi")
-                    st.markdown("✔️ **1. Aşama (Eğirme / Hammadde Hazırlık):** Doğrulandı[cite: 10]")
-                    st.markdown("✔️ **2. Aşama (Dokuma / Üretim):** Doğrulandı[cite: 10]")
-                    st.markdown("✔️ **3. Aşama (Boyama / Kimyasal İşlem):** Standartlara uygun[cite: 10]")
-                    st.markdown("✔️ **4. Aşama (Son Paketleme):** Onaylandı[cite: 10]")
+                    st.markdown("✔️ **1. Aşama (Eğirme / Hammadde Hazırlık):** Doğrulandı")
+                    st.markdown("✔️ **2. Aşama (Dokuma / Üretim):** Doğrulandı")
+                    st.markdown("✔️ **3. Aşama (Boyama / Kimyasal İşlem):** Standartlara uygun")
+                    st.markdown("✔️ **4. Aşama (Son Paketleme):** Onaylandı")
                     
                 with detay_tab4:
                     st.markdown("### 🌍 Çevresel Etki ve Yaşam Döngüsü (LCA)")
                     col_a, col_b = st.columns(2)
                     with col_a:
-                        st.metric("Karbon Ayak İzi", f"{urun['Karbon_Ayak_Izi_kg']} kg CO₂e / birim[cite: 9, 10]")
+                        st.metric("Karbon Ayak İzi", f"{urun['Karbon_Ayak_Izi_kg']} kg CO₂e / birim")
                     with col_b:
-                        st.metric("Su Kullanımı", "450 Litre / birim[cite: 10]")
+                        st.metric("Su Kullanımı", "450 Litre / birim")
                     st.markdown("**Ömür Sonu Bertaraf:** Tamamen geri dönüştürülebilir ve yeniden işlenebilir atık sınıfındadır.")
             else:
                 st.warning("Pasaport üretilebilecek %100 uyumlu ürün bulunamadı.")
