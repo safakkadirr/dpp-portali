@@ -6,17 +6,27 @@ from PIL import Image
 from datetime import datetime
 
 # 1. Sayfa Ayarları
-st.set_page_config(page_title="Ultimate DPP & AI Due Diligence Platformu", layout="wide", page_icon="🤖")
+st.set_page_config(page_title="Ultimate Multi-File DPP & AI Platform", layout="wide", page_icon="🌍")
 
-st.title("🌍 Ultimate Dijital Ürün Pasaportu (DPP) & Akıllı Uyum Platformu")
-st.markdown("Avrupa Birliği ESPR Regülasyonuna Tam Uyumlu: Bağımsız Denetim, Yapay Zeka Hata Çözüm Asistanı ve QR Pasaport.")
+st.title("🌍 Ultimate Dijital Ürün Pasaportu (DPP) & Çoklu Dosya Denetim Merkezi")
+st.markdown("Avrupa Birliği ESPR Regülasyonu: Çoklu Sevkiyat Entegrasyonu, Yapay Zeka Hata Çözüm Asistanı ve Akıllı QR Pasaport.")
 
-# 2. Sol Menü (Sidebar)
-st.sidebar.header("📁 Veri Yükleme & Entegrasyon")
-uploaded_file = st.sidebar.file_uploader("Ürün Excel Dosyanızı Yükleyin", type=["xlsx", "xls"])
+# 2. Sol Menü (Çoklu Dosya Yükleme Desteği)
+st.sidebar.header("📁 Çoklu Sevkiyat / Veri Yükleme")
+uploaded_files = st.sidebar.file_uploader(
+    "Bir veya Birden Fazla Excel Dosyası Yükleyin", 
+    type=["xlsx", "xls"], 
+    accept_multiple_files=True
+)
 
-if uploaded_file is not None:
-    df = pd.read_excel(uploaded_file)
+if uploaded_files:
+    # Birden fazla dosyayı okuyup tek bir büyük veri çerçevesinde (DataFrame) birleştiriyoruz
+    df_list = []
+    for file in uploaded_files:
+        temp_df = pd.read_excel(file)
+        df_list.append(temp_df)
+    
+    df = pd.concat(df_list, ignore_index=True)
     
     # Güvenlik ve Varsayılan Atamalar
     if 'Sertifika_Bitis_Tarihi' not in df.columns:
@@ -32,7 +42,7 @@ if uploaded_file is not None:
         
     if set(['Cevre_Sertifikasi', 'Hammadde_Mensei', 'Sektor', 'Urun_Kodu', 'Urun_Adi']).issubset(df.columns):
         
-        # --- AKILLI DENETİM MOTORU ---
+        # --- KAPSAMLI DENETİM MOTORU ---
         bugun = pd.to_datetime(datetime.today())
         
         def kapsamli_denetim(row):
@@ -80,9 +90,9 @@ if uploaded_file is not None:
         eksikler_df = df[df['Uyum_Skoru'] < 100]
         uygunlar_df = df[df['Uyum_Skoru'] == 100]
         
-        # 4'LÜ SEKMELİ YAPI (AI Asistan Eklendi)
+        # Sekmeli Yapı
         tab1, tab2, tab3, tab4 = st.tabs([
-            "📊 Kurumsal Uyum Denetimi", 
+            "📊 Birleştirilmiş Kurumsal Denetim", 
             "🏷️ Akıllı DPP Pasaportu & QR", 
             "🤖 AI Uyum & Hata Çözüm Asistanı", 
             "📋 ESPR Mevzuat Kılavuzu"
@@ -90,24 +100,24 @@ if uploaded_file is not None:
         
         # --- SEKME 1: DENETİM ---
         with tab1:
-            st.subheader("Executive Risk ve Uyum Özeti")
+            st.subheader(f"Yüklenen Toplam {len(uploaded_files)} Dosya İçin Birleştirilmiş Risk Özeti")
             col1, col2, col3, col4 = st.columns(4)
-            col1.metric("📦 Toplam Ürün", len(df))
-            col2.metric("✅ Tam Uyumlu", len(uygunlar_df))
+            col1.metric("📦 Toplam Ürün Havuzu", len(df))
+            col2.metric("✅ Tam Uyumlu Ürün", len(uygunlar_df))
             col3.metric("⚠️ Riskli Ürün", len(df[(df['Uyum_Skoru'] >= 65) & (df['Uyum_Skoru'] < 100)]))
             col4.metric("🚨 Gümrük Reddi", len(df[df['Uyum_Skoru'] < 65]))
             
             st.divider()
             if not eksikler_df.empty:
-                st.error("Aşağıdaki ürünler AB ESPR kriterlerini ve EN standartlarını ihlal etmektedir:")
+                st.error("Birleştirilmiş sevkiyat dosyalarında tespit edilen AB uyumsuzluk ihlalleri:")
                 st.dataframe(eksikler_df[['Sektor', 'Urun_Kodu', 'Urun_Adi', 'Cevre_Sertifikasi', 'Uyum_Skoru', 'Denetim_Durumu', 'Tespit_Edilen_Hatalar']], use_container_width=True)
                 
                 output = io.BytesIO()
                 with pd.ExcelWriter(output, engine='openpyxl') as writer:
-                    eksikler_df.to_excel(writer, index=False, sheet_name='Uyum_Hatalari')
-                st.download_button("📥 Denetim ve Hata Raporunu İndir (Excel)", output.getvalue(), "dpp_kapsamli_denetim_raporu.xlsx", use_container_width=True)
+                    eksikler_df.to_excel(writer, index=False, sheet_name='Tum_Dosyalar_Hatalari')
+                st.download_button("📥 Birleştirilmiş Hata Raporunu İndir (Excel)", output.getvalue(), "dpp_coklu_dosya_raporu.xlsx", use_container_width=True)
             else:
-                st.success("✅ Yüklenen tüm ürün portföyü AB normlarına tam uygundur.")
+                st.success("✅ Yüklenen tüm dosyalardaki ürünler AB normlarına tam uygundur.")
 
         # --- SEKME 2: PASAPORT & QR ---
         with tab2:
@@ -139,49 +149,42 @@ if uploaded_file is not None:
             else:
                 st.warning("Pasaport üretilebilecek %100 uyumlu ürün bulunamadı.")
 
-        # --- SEKME 3: YAPAY ZEKA ASİSTANI (YENİ) ---
+        # --- SEKME 3: AI ASİSTAN ---
         with tab3:
             st.subheader("🤖 Yapay Zeka Uyum Danışmanı & Hata Çözüm Reçetesi")
-            st.markdown("Yapay zeka asistanımız, Excel dosyanızdaki hatalı satırları tarar ve her birinin gümrükten geçebilmesi için **ne düzeltilmesi gerektiğini** adım adım söyler.")
+            st.markdown("Yüklediğiniz tüm dosyalar taranır; asistanımız hatalı satırları süzerek size nokta atışı düzeltme talimatı verir.")
             
             if not eksikler_df.empty:
-                # Kullanıcıya hatalı ürün seçtiriyoruz
                 hatali_urunler_listesi = eksikler_df['Urun_Kodu'] + " - " + eksikler_df['Urun_Adi'] + " (" + eksikler_df['Tespit_Edilen_Hatalar'] + ")"
-                secilen_hata_etiketi = st.selectbox("İncelemek ve Çözüm Almak İçin Hatalı Ürünü Seçin:", hatali_urunler_listesi)
+                secilen_hata_etiketi = st.selectbox("İncelemek İçin Hatalı Ürünü Seçin:", hatali_urunler_listesi)
                 
                 secilen_hata_kod = secilen_hata_etiketi.split(" - ")[0]
                 hatali_urun = eksikler_df[eksikler_df['Urun_Kodu'] == secilen_hata_kod].iloc[0]
                 
                 st.divider()
-                st.error(f"🚨 **Tespit Edilen İhlal Durumu:** {hatali_urun['Tespit_Edilen_Hatalar']} (Uyum Skoru: %{hatali_urun['Uyum_Skoru']})")
+                st.error(f"🚨 **İhlal Durumu:** {hatali_urun['Tespit_Edilen_Hatalar']} (Uyum Skoru: %{hatali_urun['Uyum_Skoru']})")
                 
-                st.markdown("### 💡 Yapay Zeka Uzman Tavsiyesi & Düzeltme Reçetesi")
-                
-                # Akıllı Hata Çözüm Üreteci
                 hata_metni = hatali_urun['Tespit_Edilen_Hatalar']
                 sektor_bilgisi = hatali_urun['Sektor']
                 
+                st.markdown("### 💡 Yapay Zeka Uzman Tavsiyesi")
                 if "Kritik Veri" in hata_metni:
-                    st.warning(f"**Sorun Analizi:** {hatali_urun['Urun_Kodu']} numaralı ürünün 'Çevre Sertifikası' veya 'Hammadde Menşei' hücresi boş bırakılmış. AB regülasyonlarına göre boş alanlarla gümrük beyannamesi oluşturulamaz.")
-                    st.info(f"**🛠️ Çözüm Adımı:** Excel dosyanızda bu ürüne ait satırı bulun. Hammadde menşeini (örneğin 'Türkiye' veya 'Almanya') ve sektöre uygun geçerli sertifikayı yazıp dosyayı yeniden yükleyin.")
+                    st.warning(f"**Analiz:** {hatali_urun['Urun_Kodu']} kodlu üründe menşei veya çevre sertifikası eksik.")
+                    st.info("**Çözüm:** Excel dosyanızdaki ilgili satıra hammadde menşei ve geçerli sertifikayı ekleyip dosyayı tekrar sisteme yükleyin.")
                 elif "Süresi Dolmuş" in hata_metni:
-                    st.warning(f"**Sorun Analizi:** Ürüne ait sertifikanın geçerlilik tarihi geçmiş. Geçmiş tarihli belgeler AB denetimlerinde geçersiz sayılır.")
-                    st.info(f"**🛠️ Çözüm Adımı:** Excel'deki `Sertifika_Bitis_Tarihi` sütununu güncel ileri bir tarihe (örneğin 2028-12-31) güncelleyin veya yeni sertifika ekleyin.")
-                elif "Norm İhlali" in hata_metni or "İhlali" in hata_metni:
-                    st.warning(f"**Sorun Analizi:** **{sektor_bilgisi}** sektörü için girilen sertifika AB'nin zorunlu koştugu EN standartlarına (Örn: Tekstil için OEKO-TEX/REACH, Elektronik için RoHS) uymuyor.")
-                    st.info(f"**🛠️ Çözüm Adımı:** Excel'deki `Cevre_Sertifikasi` hücresine ilgili sektörün zorunlu standardını yazarak düzeltme yapın.")
+                    st.warning("**Analiz:** Ürünün sertifika geçerlilik tarihi geçmiş.")
+                    st.info("**Çözüm:** `Sertifika_Bitis_Tarihi` sütununu güncel ileri bir tarihe güncelleyin.")
+                else:
+                    st.warning(f"**Analiz:** **{sektor_bilgisi**} sektörü için girilen sertifika AB EN normlarına uymuyor.")
+                    st.info("**Çözüm:** Sektöre özel zorunlu standardı (Örn: Tekstil için REACH/OEKO-TEX) ekleyin.")
             else:
-                st.success("🎉 Tebrikler! Yüklenen dosyadaki hiçbir üründe yapay zekanın tespit ettiği bir hata veya uyumsuzluk yok.")
+                st.success("🎉 Yüklenen tüm dosyalar tertemiz!")
 
         # --- SEKME 4: MEVZUAT ---
         with tab4:
-            st.subheader("📚 AB Sürdürülebilir Ürünler Ekolojik Tasarım (ESPR) Rehberi")
-            st.markdown("""
-            * **Şeffaflık:** Tedarik zinciri boyunca tam izlenebilirlik.
-            * **Çevresel Performans:** Karbon emisyonları ve hammadde menşei takibi.
-            * **Döngüsel Ekonomi:** Geri dönüştürülebilirlik oranlarının bizzat pasaporta işlenmesi.
-            """)
+            st.subheader("📚 AB ESPR Rehberi")
+            st.markdown("Çoklu dosya birleştirme desteğiyle tüm tedarik zinciri tek ekranda denetlenir.")
     else:
-        st.error("Yüklenen Excel dosyasında zorunlu sütunlar eksik.")
+        st.error("Yüklenen dosyalarda zorunlu sütunlar eksik.")
 else:
-    st.info("👈 Başlamak için lütfen sol menüden Excel dosyanızı yükleyin.")
+    st.info("👈 Başlamak için sol menüden **birden fazla** Excel dosyasını seçip yükleyin.")
