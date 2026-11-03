@@ -1,4 +1,7 @@
-pandas
+streamlit>=1.40
+pandas>=2.0
 openpyxl
-qrcode
+xlrd
+qrcode[pil]
 Pillow
+google-genai
