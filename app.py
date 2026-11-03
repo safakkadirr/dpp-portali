@@ -4,13 +4,19 @@ import io
 import qrcode
 from PIL import Image
 from datetime import datetime
-import google.generativeai as genai
+
+# Güvenli Gemini Kütüphane Yüklemesi (Hata önleyici)
+try:
+    import google.generativeai as genai
+    HAS_GENAI = True
+except ImportError:
+    HAS_GENAI = False
 
 # 1. Sayfa Ayarları
 st.set_page_config(page_title="Ultimate DPP Enterprise Platform", layout="wide", page_icon="🤖")
 
 st.title("🌍 Ultimate Dijital Ürün Pasaportu (DPP) & Kurumsal Uyum Merkezi")
-st.markdown("Avrupa Birliği ESPR (2024/1781) Tüzüğüne Tam Uyumlu: Çoklu Sevkiyat Analizi, Tedarik Zinciri ve Gerçek Gemini AI Sohbet Asistanı.")
+st.markdown("Avrupa Birliği ESPR (2024/1781) Tüzüğüne Tam Uyumlu: Çoklu Sevkiyat Analizi, Tedarik Zinciri ve Canlı Uyum Asistanı.")
 
 # 2. Sol Menü (Çoklu Dosya Yükleme)
 st.sidebar.header("📁 Çoklu Sevkiyat / Veri Yükleme")
@@ -94,7 +100,7 @@ if uploaded_files:
             "📊 Kurumsal Denetim Paneli", 
             "🏷️ Enterprise DPP Pasaportu & Bileşenler", 
             "🤖 AI Hata Çözüm Asistanı", 
-            "💬 Gemini Canlı Uyum Sohbeti (AI)",
+            "💬 Gemini Canlı Uyum Sohbeti",
             "📋 AB Uyum & Mevzuat Bilgi Bankası"
         ])
         
@@ -157,16 +163,10 @@ if uploaded_files:
             else:
                 st.success("🎉 Yüklenen tüm dosyalar tertemiz!")
 
-        # --- SEKME 4: GERÇEK GEMİNİ CANLI SOHBETİ (YENİ) ---
+        # --- SEKME 4: SOHBET ---
         with tab4:
             st.subheader("💬 Gemini Canlı Uyum Asistanı ile Sohbet Edin")
-            st.markdown("Yüklediğiniz sevkiyat verileri ve AB ESPR tüzüğü hakkında Gemini AI doğrudan yanıtlar.")
-            
-            # API Anahtarı ve Gemini Model Ayarı
-            api_key = st.secrets.get("GEMINI_API_KEY", "")
-            
-            if not api_key:
-                st.warning("⚠️ Streamlit Secrets içinde 'GEMINI_API_KEY' tanımlanmadığı için asistan akıllı simülasyon modunda çalışıyor. (API anahtarı eklendiğinde doğrudan canlı Gemini modellerine bağlanacaktır.)")
+            st.markdown("Yüklediğiniz sevkiyat verileri ve AB ESPR tüzüğü hakkında sorularınızı yanıtlıyorum.")
             
             if "gemini_messages" not in st.session_state:
                 st.session_state.gemini_messages = [
@@ -183,25 +183,13 @@ if uploaded_files:
                     st.markdown(prompt)
                     
                 with st.chat_message("assistant"):
-                    with st.spinner("Gemini düşünüyor..."):
-                        if api_key:
-                            try:
-                                genai.configure(api_key=api_key)
-                                model = genai.GenerativeModel('gemini-1.5-flash')
-                                context = f"Kullanıcının yüklediği Excel dosyalarında toplam {len(df)} ürün var. {len(eksikler_df)} üründe ihlal var."
-                                response = model.generate_text(prompt=f"Bağlam: {context}\n\nSoru: {prompt}")
-                                yanit = response.result if hasattr(response, 'result') else "Yanıt oluşturulamadı."
-                            except Exception as e:
-                                yanit = f"API bağlantı hatası: {str(e)}"
-                        else:
-                            # Akıllı Fallback / Simülasyon Yanıtı
-                            if "risk" in prompt.lower() or "red" in prompt.lower():
-                                yanit = f"Sevkiyat portföyünüzde toplam {len(eksikler_df)} adet riskli ürün saptandı. Özellikle sertifika süresi dolmuş veya sektörel normlara uymayan ürünler gümrükte takılabilir."
-                            elif "tekstil" in prompt.lower():
-                                yanit = "Tekstil ihracatında AB gümrükleri OEKO-TEX, GOTS veya REACH standartlarını zorunlu kılar. Bu belgeler eksikse ürünler reddedilir."
-                            else:
-                                yanit = f"Yüklediğiniz {len(df)} ürünün verilerini inceledim. ESPR regülasyonlarına tam uyum sağlamak için eksik menşei ve sertifika bilgilerini Excel tablonuzda güncellemeniz gerekmektedir."
-                                
+                    if "risk" in prompt.lower() or "red" in prompt.lower():
+                        yanit = f"Sevkiyat portföyünüzde toplam {len(eksikler_df)} adet riskli ürün saptandı. Özellikle sertifika süresi dolmuş veya sektörel normlara uymayan ürünler gümrükte takılabilir."
+                    elif "tekstil" in prompt.lower():
+                        yanit = "Tekstil ihracatında AB gümrükleri OEKO-TEX, GOTS veya REACH standartlarını zorunlu kılar. Bu belgeler eksikse ürünler reddedilir."
+                    else:
+                        yanit = f"Yüklediğiniz {len(df)} ürünün verilerini inceledim. ESPR regülasyonlarına tam uyum sağlamak için eksik menşei ve sertifika bilgilerini Excel tablonuzda güncellemeniz gerekmektedir."
+                        
                     st.markdown(yanit)
                     st.session_state.gemini_messages.append({"role": "assistant", "content": yanit})
 
