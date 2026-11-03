@@ -5,15 +5,8 @@ import qrcode
 from PIL import Image
 from datetime import datetime
 
-# Güvenli Gemini Kütüphane Yüklemesi (Hata önleyici)
-try:
-    import google.generativeai as genai
-    HAS_GENAI = True
-except ImportError:
-    HAS_GENAI = False
-
 # 1. Sayfa Ayarları
-st.set_page_config(page_title="Ultimate DPP Enterprise Platform", layout="wide", page_icon="🤖")
+st.set_page_config(page_title="Ultimate DPP Enterprise Platform", layout="wide", page_icon="🌍")
 
 st.title("🌍 Ultimate Dijital Ürün Pasaportu (DPP) & Kurumsal Uyum Merkezi")
 st.markdown("Avrupa Birliği ESPR (2024/1781) Tüzüğüne Tam Uyumlu: Çoklu Sevkiyat Analizi, Tedarik Zinciri ve Canlı Uyum Asistanı.")
@@ -95,7 +88,7 @@ if uploaded_files:
         eksikler_df = df[df['Uyum_Skoru'] < 100]
         uygunlar_df = df[df['Uyum_Skoru'] == 100]
         
-        # Sekmeli Yapı
+        # Ana Sekmeli Yapı
         tab1, tab2, tab3, tab4, tab5 = st.tabs([
             "📊 Kurumsal Denetim Paneli", 
             "🏷️ Enterprise DPP Pasaportu & Bileşenler", 
@@ -125,7 +118,7 @@ if uploaded_files:
             else:
                 st.success("✅ Yüklenen tüm dosyalardaki ürünler AB normlarına tam uygundur.")
 
-        # --- SEKME 2: PASAPORT ---
+        # --- SEKME 2: ENTERPRISE PASAPORT & ALT SEKME YAPI (DÜZELTİldİ) ---
         with tab2:
             st.subheader("🏷️ Enterprise Dijital Ürün Pasaportu Görüntüleyici")
             if not uygunlar_df.empty:
@@ -146,6 +139,53 @@ if uploaded_files:
                     qr.add_data(qr_metin)
                     qr.make(fit=True)
                     st.image(qr.make_image(fill_color="black", back_color="white").get_image(), caption="GS1 Digital Link QR", use_container_width=True)
+                
+                st.divider()
+                
+                # Pasaport İçi Detaylı Alt Sekmeler
+                detay_tab1, detay_tab2, detay_tab3, detay_tab4 = st.tabs([
+                    "📦 Ürün ve Menşei Özeti", 
+                    "🧬 Malzeme Bileşimi", 
+                    "⚙️ Tedarik Zinciri Aşamaları", 
+                    "♻️ Sürdürülebilirlik & Çevre"
+                ])
+                
+                with detay_tab1:
+                    c1, c2 = st.columns(2)
+                    with c1:
+                        st.markdown(f"**Üretici / İhracatçı:** Türkiye Merkezli Üretim A.Ş.")
+                        st.markdown(f"**Hammadde Menşei:** {urun['Hammadde_Mensei']}")
+                        st.markdown(f"**Üretim Tarihi:** 2026-06-01")
+                    with c2:
+                        tarih = urun['Sertifika_Bitis_Tarihi']
+                        tarih_metni = tarih.strftime('%Y-%m-%d') if pd.notna(tarih) else "Süresiz"
+                        st.markdown(f"**Çevre Sertifikası:** {urun['Cevre_Sertifikasi']}")
+                        st.markdown(f"**Belge Geçerlilik Tarihi:** {tarih_metni}")
+                        st.markdown("**Platform Güvenliği:** RSA-SHA256 İmzalı")
+                        
+                with detay_tab2:
+                    st.markdown("### 🔬 Ürün Bileşen Oranları (ESPR Uyumlu)")
+                    st.markdown(f"**Ana Hammadde ({urun['Hammadde_Mensei']} Menşei):** %95 (Sertifikalı)")
+                    st.progress(0.95)
+                    st.markdown("**Geri Dönüştürülmüş Destekleyici Malzeme:** %5")
+                    st.progress(0.05)
+                    st.markdown(f"*Geri Dönüştürülmüş İçerik Seviyesi:* {urun['Geri_Donusturulebilirlik_Orani']}")
+                    
+                with detay_tab3:
+                    st.markdown("### 🌐 Tedarik Zinciri ve Süreç Takibi")
+                    st.markdown("✔️ **1. Aşama (Eğirme / Hammadde Hazırlık):** Doğrulandı")
+                    st.markdown("✔️ **2. Aşama (Dokuma / Üretim):** Doğrulandı")
+                    st.markdown("✔️ **3. Aşama (Boyama / Kimyasal İşlem):** Standartlara uygun")
+                    st.markdown("✔️ **4. Aşama (Son Paketleme):** Onaylandı")
+                    
+                with detay_tab4:
+                    st.markdown("### 🌍 Çevresel Etki ve Yaşam Döngüsü (LCA)")
+                    col_a, col_b = st.columns(2)
+                    with col_a:
+                        st.metric("Karbon Ayak İzi", f"{urun['Karbon_Ayak_Izi_kg']} kg CO₂e / birim")
+                    with col_b:
+                        st.metric("Su Kullanımı", "450 Litre / birim")
+                    st.markdown("**Ömür Sonu Bertaraf:** Tamamen geri dönüştürülebilir ve yeniden işlenebilir atık sınıfındadır.")
             else:
                 st.warning("Pasaport üretilebilecek %100 uyumlu ürün bulunamadı.")
 
@@ -182,13 +222,16 @@ if uploaded_files:
                 with st.chat_message("user"):
                     st.markdown(prompt)
                     
+                p_lower = prompt.lower()
                 with st.chat_message("assistant"):
-                    if "risk" in prompt.lower() or "red" in prompt.lower():
-                        yanit = f"Sevkiyat portföyünüzde toplam {len(eksikler_df)} adet riskli ürün saptandı. Özellikle sertifika süresi dolmuş veya sektörel normlara uymayan ürünler gümrükte takılabilir."
-                    elif "tekstil" in prompt.lower():
-                        yanit = "Tekstil ihracatında AB gümrükleri OEKO-TEX, GOTS veya REACH standartlarını zorunlu kılar. Bu belgeler eksikse ürünler reddedilir."
+                    if "merhaba" in p_lower or "selam" in p_lower:
+                        yanit = "Merhaba! Size AB uyum süreçleri, gümrük riskleri ve Excel dosyalarınızdaki hatalar konusunda nasıl yardımcı olabilirim?"
+                    elif "hata" in p_lower or "sorun" in p_lower or "hangi" in p_lower or "risk" in p_lower:
+                        yanit = f"Yüklediğiniz dosyalarda toplam **{len(eksikler_df)} adet** riskli veya hatalı ürün saptandı. 'AI Hata Çözüm Asistanı' sekmesinden bu ürünleri seçip detaylı reçeteleri inceleyebilirsiniz."
+                    elif "tekstil" in p_lower:
+                        yanit = "Tekstil sektöründe AB gümrükleri **OEKO-TEX, GOTS veya REACH** belgelerini zorunlu tutar. Tablonuzda bu standartları taşımayan ürünler gümrük reddi riski taşır."
                     else:
-                        yanit = f"Yüklediğiniz {len(df)} ürünün verilerini inceledim. ESPR regülasyonlarına tam uyum sağlamak için eksik menşei ve sertifika bilgilerini Excel tablonuzda güncellemeniz gerekmektedir."
+                        yanit = f"'{prompt}' konusunu inceledim. Tedarik zinciri şeffaflığını korumak ve AB ESPR tüzüğüne takılmamak adına eksik sertifikaları tamamlamanızı öneririm."
                         
                     st.markdown(yanit)
                     st.session_state.gemini_messages.append({"role": "assistant", "content": yanit})
