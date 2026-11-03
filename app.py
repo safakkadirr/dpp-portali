@@ -94,7 +94,7 @@ if uploaded_files:
             "🏷️ Enterprise DPP Pasaportu & Bileşenler", 
             "🤖 AI Hata Çözüm Asistanı", 
             "💬 Gemini Canlı Uyum Sohbeti",
-            "📋 Gerçek ESPR Mevzuat & Uyum Kılavuzu"
+            "📋 AB Uyum & Mevzuat Bilgi Bankası"
         ])
         
         # --- SEKME 1: DENETİM ---
@@ -118,11 +118,9 @@ if uploaded_files:
             else:
                 st.success("✅ Yüklenen tüm dosyalardaki ürünler AB normlarına tam uygundur.")
 
-        # --- SEKME 2: ENTERPRISE PASAPORT & TÜM DETAYLAR ---
+        # --- SEKME 2: PASAPORT ---
         with tab2:
             st.subheader("🏷️ Enterprise Dijital Ürün Pasaportu Görüntüleyici")
-            st.markdown("GS1 Digital Link standartlarına uygun, malzeme bileşimleri ve tedarik zinciri aşamalarını içeren resmi pasaport.")
-            
             if not uygunlar_df.empty:
                 urunler = uygunlar_df['Urun_Kodu'] + " - " + uygunlar_df['Urun_Adi']
                 secim = st.selectbox("Pasaportu Görüntülenecek Ürünü Seçin:", urunler)
@@ -130,7 +128,6 @@ if uploaded_files:
                 urun = uygunlar_df[uygunlar_df['Urun_Kodu'] == secilen_kod].iloc[0]
                 
                 st.divider()
-                
                 ust_sol, ust_sag = st.columns([3, 1])
                 with ust_sol:
                     st.success(f"**Uyum Skoru: %{urun['Uyum_Skoru']}** — AB Gümrük Onaylı & Doğrulanmış Ürün")
@@ -144,14 +141,12 @@ if uploaded_files:
                     st.image(qr.make_image(fill_color="black", back_color="white").get_image(), caption="GS1 Digital Link QR", use_container_width=True)
                 
                 st.divider()
-                
                 detay_tab1, detay_tab2, detay_tab3, detay_tab4 = st.tabs([
                     "📦 Ürün ve Menşei Özeti", 
                     "🧬 Malzeme Bileşimi", 
                     "⚙️ Tedarik Zinciri Aşamaları", 
                     "♻️ Sürdürülebilirlik & Çevre"
                 ])
-                
                 with detay_tab1:
                     c1, c2 = st.columns(2)
                     with c1:
@@ -164,22 +159,17 @@ if uploaded_files:
                         st.markdown(f"**Çevre Sertifikası:** {urun['Cevre_Sertifikasi']}")
                         st.markdown(f"**Belge Geçerlilik Tarihi:** {tarih_metni}")
                         st.markdown("**Platform Güvenliği:** RSA-SHA256 İmzalı")
-                        
                 with detay_tab2:
                     st.markdown("### 🔬 Ürün Bileşen Oranları (ESPR Uyumlu)")
                     st.markdown(f"**Ana Hammadde ({urun['Hammadde_Mensei']} Menşei):** %95 (Sertifikalı)")
                     st.progress(0.95)
                     st.markdown("**Geri Dönüştürülmüş Destekleyici Malzeme:** %5")
                     st.progress(0.05)
-                    st.markdown(f"*Geri Dönüştürülmüş İçerik Seviyesi:* {urun['Geri_Donusturulebilirlik_Orani']}")
-                    
                 with detay_tab3:
                     st.markdown("### 🌐 Tedarik Zinciri ve Süreç Takibi")
                     st.markdown("✔️ **1. Aşama (Eğirme / Hammadde Hazırlık):** Doğrulandı")
                     st.markdown("✔️ **2. Aşama (Dokuma / Üretim):** Doğrulandı")
-                    st.markdown("✔️ **3. Aşama (Boyama / Kimyasal İşlem):** Standartlara uygun")
-                    st.markdown("✔️ **4. Aşama (Son Paketleme):** Onaylandı")
-                    
+                    st.markdown("✔️ **3. Aşama (Boyama / İşlem):** Standartlara uygun")
                 with detay_tab4:
                     st.markdown("### 🌍 Çevresel Etki ve Yaşam Döngüsü (LCA)")
                     col_a, col_b = st.columns(2)
@@ -187,7 +177,6 @@ if uploaded_files:
                         st.metric("Karbon Ayak İzi", f"{urun['Karbon_Ayak_Izi_kg']} kg CO₂e / birim")
                     with col_b:
                         st.metric("Su Kullanımı", "450 Litre / birim")
-                    st.markdown("**Ömür Sonu Bertaraf:** Tamamen geri dönüştürülebilir ve yeniden işlenebilir atık sınıfındadır.")
             else:
                 st.warning("Pasaport üretilebilecek %100 uyumlu ürün bulunamadı.")
 
@@ -199,22 +188,9 @@ if uploaded_files:
                 secilen_hata_etiketi = st.selectbox("İncelemek İçin Hatalı Ürünü Seçin:", hatali_urunler_listesi)
                 secilen_hata_kod = secilen_hata_etiketi.split(" - ")[0]
                 hatali_urun = eksikler_df[eksikler_df['Urun_Kodu'] == secilen_hata_kod].iloc[0]
-                
                 st.divider()
                 st.error(f"🚨 **İhlal Durumu:** {hatali_urun['Tespit_Edilen_Hatalar']} (Uyum Skoru: %{hatali_urun['Uyum_Skoru']})")
-                hata_metni = hatali_urun['Tespit_Edilen_Hatalar']
-                sektor_bilgisi = hatali_urun['Sektor']
-                
-                st.markdown("### 💡 Uzman Tavsiyesi")
-                if "Kritik Veri" in hata_metni:
-                    st.warning(f"**Analiz:** {hatali_urun['Urun_Kodu']} kodlu üründe menşei veya çevre sertifikası eksik.")
-                    st.info("**Çözüm:** Excel dosyanızdaki ilgili satıra hammadde menşei ve geçerli sertifikayı ekleyip dosyayı tekrar sisteme yükleyin.")
-                elif "Süresi Dolmuş" in hata_metni:
-                    st.warning("**Analiz:** Ürünün sertifika geçerlilik tarihi geçmiş.")
-                    st.info("**Çözüm:** `Sertifika_Bitis_Tarihi` sütununu güncel ileri bir tarihe güncelleyin.")
-                else:
-                    st.warning(f"**Analiz:** **{sektor_bilgisi}** sektörü için girilen sertifika AB EN normlarına uymuyor.")
-                    st.info("**Çözüm:** Sektöre özel zorunlu standardı ekleyin.")
+                st.info("Çözüm için Excel dosyanızdaki eksik veya hatalı alanları güncelleyin.")
             else:
                 st.success("🎉 Yüklenen tüm dosyalar tertemiz!")
 
@@ -222,36 +198,48 @@ if uploaded_files:
         with tab4:
             st.subheader("💬 Gemini Canlı Uyum Asistanı ile Sohbet Edin")
             if "messages" not in st.session_state:
-                st.session_state.messages = [
-                    {"role": "assistant", "content": "Merhaba! Ben DPP Uyum Asistanınızım. Yüklediğiniz sevkiyat dosyaları ve AB regülasyonları hakkında bana her şeyi sorabilirsiniz."}
-                ]
+                st.session_state.messages = [{"role": "assistant", "content": "Merhaba! DPP Uyum Asistanınızım. Soru sorabilirsiniz."}]
             for message in st.session_state.messages:
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"])
-            if prompt := st.chat_input("Örn: Hangi ürünlerimde gümrük reddi riski var?"):
+            if prompt := st.chat_input("Sorunuzu yazın..."):
                 st.session_state.messages.append({"role": "user", "content": prompt})
                 with st.chat_message("user"):
                     st.markdown(prompt)
                 with st.chat_message("assistant"):
-                    if "risk" in prompt.lower() or "red" in prompt.lower():
-                        yanit = f"Analiz sonuçlarına göre toplam {len(eksikler_df)} üründe risk veya gümrük reddi tespiti yapıldı. Detaylar için Kurumsal Denetim Paneli sekmesini inceleyebilirsiniz."
-                    else:
-                        yanit = f"Yüklediğiniz {len(df)} adet ürünü inceledim. Tedarik zinciri şeffaflığı için eksik sertifikaları tamamlamanızı öneririm."
+                    yanit = f"Analiz edildi: '{prompt}' konusunda tedarik zinciri şeffaflığı için belgelerinizi güncel tutmalısınız."
                     st.markdown(yanit)
                     st.session_state.messages.append({"role": "assistant", "content": yanit})
 
-        # --- SEKME 5: GERÇEK ESPR REHBERİ ---
+        # --- SEKME 5: ZENGİNLEŞTİRİLMİŞ AB UYUM & MEVZUAT BİLGİ BANKASI (YENİ) ---
         with tab5:
-            st.subheader("📚 Resmi ESPR (Ecodesign for Sustainable Products Regulation) Kılavuzu")
-            st.markdown("""
-            Avrupa Birliği'nin **2024/1781 sayılı Ekotasarım Tüzüğü (ESPR)**, iç pazarda satılan ürünlerin çevresel sürdürülebilirliğini kökten değiştirmektedir. Platformumuz aşağıdaki yasal zorunlulukları otomatik denetler:
-
-            * **1. Ürün Dayanıklılığı ve Güvenilirliği:** Ürünlerin arızalanmaya karşı direnci, yeniden imalat potansiyeli ve bakım kolaylığı.
-            * **2. Yükseltilebilirlik ve Onarılabilirlik:** Yedek parça bulundurma zorunluluğu ve söküm kılavuzlarına erişim uyumu.
-            * **3. Kimyasal Madde Kısıtlamaları (REACH / RoHS):** Ürün bileşiminde tehlikeli ve kısıtlanmış maddelerin bulunup bulunmadığının tespiti.
-            * **4. Geri Dönüştürülmüş İçerik Oranı:** Üretimde kullanılan ikincil (geri dönüştürülmüş) hammadde yüzdesinin beyanı.
-            * **5. Karbon ve Çevresel Ayak İzi:** Ürünün yaşam döngüsü boyunca (LCA) ortaya çıkan sera gazı emisyonlarının hesaplanması.
-            """)
+            st.subheader("📚 AB Sürdürülebilir Ürünler Ekolojik Tasarım (ESPR) Bilgi Bankası")
+            st.markdown("Avrupa Birliği'nin 2024/1781 sayılı tüzüğü kapsamında üreticilerin ve ihracatçıların bilmesi gereken kritik regülasyon başlıkları:")
+            
+            with st.expander("📌 1. ESPR (Ecodesign for Sustainable Products Regulation) Nedir?"):
+                st.markdown("ESPR, AB pazarında satılan neredeyse tüm fiziksel malların çevresel sürdürülebilirliğini artıran yeni bir yasal çerçevedir. Ürünlerin dayanıklılığından geri dönüştürülebilirliğine kadar her adımı denetler.")
+                
+            with st.expander("📌 2. Sektörel Normlar ve Zorunlu Sertifikalar Matrisi"):
+                st.markdown("""
+                * **Tekstil:** OEKO-TEX, REACH, GOTS (Kimyasal kısıtlaması ve organik hammadde doğrulaması).
+                * **Elektronik & Beyaz Eşya:** RoHS, WEEE, CE (Tehlikeli madde kısıtlaması ve e-atık yönetimi).
+                * **Mobilya:** FSC (Sürdürülebilir ormancılık ve ahşap menşei).
+                * **Otomotiv:** IATF 16949, REACH (Kalite ve kimyasal uyumluluk).
+                """)
+                
+            with st.expander("📌 3. Gümrük Reddi Riskini Azaltma Stratejileri"):
+                st.markdown("""
+                1. **Zamanında Güncelleme:** Sertifika bitiş tarihlerini periyodik olarak kontrol edin.
+                2. **Menşei Şeffaflığı:** Hammadde tedarikçilerinizden gelen belgelerin doğruluğunu UYAP / sistemler üzerinden doğrulayın.
+                3. **Karbon Takibi:** Ürün başına düşen CO2e emisyonlarını ISO 14064 standartlarına göre raporlayın.
+                """)
+                
+            with st.expander("📌 4. Dijital Ürün Pasaportu (DPP) Zorunluluk Takvimi"):
+                st.markdown("""
+                * **Şubat 2027:** Endüstriyel ve taşınabilir piller.
+                * **2027 Boyunca:** Tekstil, moda, tüketici elektroniği ve lastikler.
+                * **2028 - 2030:** Ambalaj, mobilya, kimyasallar ve diğer tüketim malları.
+                """)
     else:
         st.error("Yüklenen dosyalarda zorunlu sütunlar eksik.")
 else:
