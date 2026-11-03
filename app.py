@@ -20,7 +20,6 @@ uploaded_files = st.sidebar.file_uploader(
 )
 
 if uploaded_files:
-    # Birden fazla dosyayı okuyup tek bir büyük veri çerçevesinde (DataFrame) birleştiriyoruz
     df_list = []
     for file in uploaded_files:
         temp_df = pd.read_excel(file)
@@ -28,7 +27,6 @@ if uploaded_files:
     
     df = pd.concat(df_list, ignore_index=True)
     
-    # Güvenlik ve Varsayılan Atamalar
     if 'Sertifika_Bitis_Tarihi' not in df.columns:
         df['Sertifika_Bitis_Tarihi'] = pd.to_datetime('2028-12-31')
     else:
@@ -175,7 +173,7 @@ if uploaded_files:
                     st.warning("**Analiz:** Ürünün sertifika geçerlilik tarihi geçmiş.")
                     st.info("**Çözüm:** `Sertifika_Bitis_Tarihi` sütununu güncel ileri bir tarihe güncelleyin.")
                 else:
-                    st.warning(f"**Analiz:** **{sektor_bilgisi**} sektörü için girilen sertifika AB EN normlarına uymuyor.")
+                    st.warning(f"**Analiz:** **{sektor_bilgisi}** sektörü için girilen sertifika AB EN normlarına uymuyor.")
                     st.info("**Çözüm:** Sektöre özel zorunlu standardı (Örn: Tekstil için REACH/OEKO-TEX) ekleyin.")
             else:
                 st.success("🎉 Yüklenen tüm dosyalar tertemiz!")
