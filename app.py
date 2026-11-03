@@ -4,12 +4,13 @@ import io
 import qrcode
 from PIL import Image
 from datetime import datetime
+import google.generativeai as genai
 
 # 1. Sayfa Ayarları
-st.set_page_config(page_title="Ultimate DPP Enterprise Platform", layout="wide", page_icon="🌍")
+st.set_page_config(page_title="Ultimate DPP Enterprise Platform", layout="wide", page_icon="🤖")
 
 st.title("🌍 Ultimate Dijital Ürün Pasaportu (DPP) & Kurumsal Uyum Merkezi")
-st.markdown("Avrupa Birliği ESPR (2024/1781) Tüzüğüne Tam Uyumlu: Çoklu Sevkiyat Analizi, Tedarik Zinciri ve Akıllı QR Pasaport.")
+st.markdown("Avrupa Birliği ESPR (2024/1781) Tüzüğüne Tam Uyumlu: Çoklu Sevkiyat Analizi, Tedarik Zinciri ve Gerçek Gemini AI Sohbet Asistanı.")
 
 # 2. Sol Menü (Çoklu Dosya Yükleme)
 st.sidebar.header("📁 Çoklu Sevkiyat / Veri Yükleme")
@@ -93,7 +94,7 @@ if uploaded_files:
             "📊 Kurumsal Denetim Paneli", 
             "🏷️ Enterprise DPP Pasaportu & Bileşenler", 
             "🤖 AI Hata Çözüm Asistanı", 
-            "💬 Gemini Canlı Uyum Sohbeti",
+            "💬 Gemini Canlı Uyum Sohbeti (AI)",
             "📋 AB Uyum & Mevzuat Bilgi Bankası"
         ])
         
@@ -139,44 +140,6 @@ if uploaded_files:
                     qr.add_data(qr_metin)
                     qr.make(fit=True)
                     st.image(qr.make_image(fill_color="black", back_color="white").get_image(), caption="GS1 Digital Link QR", use_container_width=True)
-                
-                st.divider()
-                detay_tab1, detay_tab2, detay_tab3, detay_tab4 = st.tabs([
-                    "📦 Ürün ve Menşei Özeti", 
-                    "🧬 Malzeme Bileşimi", 
-                    "⚙️ Tedarik Zinciri Aşamaları", 
-                    "♻️ Sürdürülebilirlik & Çevre"
-                ])
-                with detay_tab1:
-                    c1, c2 = st.columns(2)
-                    with c1:
-                        st.markdown(f"**Üretici / İhracatçı:** Türkiye Merkezli Üretim A.Ş.")
-                        st.markdown(f"**Hammadde Menşei:** {urun['Hammadde_Mensei']}")
-                        st.markdown(f"**Üretim Tarihi:** 2026-06-01")
-                    with c2:
-                        tarih = urun['Sertifika_Bitis_Tarihi']
-                        tarih_metni = tarih.strftime('%Y-%m-%d') if pd.notna(tarih) else "Süresiz"
-                        st.markdown(f"**Çevre Sertifikası:** {urun['Cevre_Sertifikasi']}")
-                        st.markdown(f"**Belge Geçerlilik Tarihi:** {tarih_metni}")
-                        st.markdown("**Platform Güvenliği:** RSA-SHA256 İmzalı")
-                with detay_tab2:
-                    st.markdown("### 🔬 Ürün Bileşen Oranları (ESPR Uyumlu)")
-                    st.markdown(f"**Ana Hammadde ({urun['Hammadde_Mensei']} Menşei):** %95 (Sertifikalı)")
-                    st.progress(0.95)
-                    st.markdown("**Geri Dönüştürülmüş Destekleyici Malzeme:** %5")
-                    st.progress(0.05)
-                with detay_tab3:
-                    st.markdown("### 🌐 Tedarik Zinciri ve Süreç Takibi")
-                    st.markdown("✔️ **1. Aşama (Eğirme / Hammadde Hazırlık):** Doğrulandı")
-                    st.markdown("✔️ **2. Aşama (Dokuma / Üretim):** Doğrulandı")
-                    st.markdown("✔️ **3. Aşama (Boyama / İşlem):** Standartlara uygun")
-                with detay_tab4:
-                    st.markdown("### 🌍 Çevresel Etki ve Yaşam Döngüsü (LCA)")
-                    col_a, col_b = st.columns(2)
-                    with col_a:
-                        st.metric("Karbon Ayak İzi", f"{urun['Karbon_Ayak_Izi_kg']} kg CO₂e / birim")
-                    with col_b:
-                        st.metric("Su Kullanımı", "450 Litre / birim")
             else:
                 st.warning("Pasaport üretilebilecek %100 uyumlu ürün bulunamadı.")
 
@@ -194,52 +157,62 @@ if uploaded_files:
             else:
                 st.success("🎉 Yüklenen tüm dosyalar tertemiz!")
 
-        # --- SEKME 4: SOHBET ---
+        # --- SEKME 4: GERÇEK GEMİNİ CANLI SOHBETİ (YENİ) ---
         with tab4:
             st.subheader("💬 Gemini Canlı Uyum Asistanı ile Sohbet Edin")
-            if "messages" not in st.session_state:
-                st.session_state.messages = [{"role": "assistant", "content": "Merhaba! DPP Uyum Asistanınızım. Soru sorabilirsiniz."}]
-            for message in st.session_state.messages:
+            st.markdown("Yüklediğiniz sevkiyat verileri ve AB ESPR tüzüğü hakkında Gemini AI doğrudan yanıtlar.")
+            
+            # API Anahtarı ve Gemini Model Ayarı
+            api_key = st.secrets.get("GEMINI_API_KEY", "")
+            
+            if not api_key:
+                st.warning("⚠️ Streamlit Secrets içinde 'GEMINI_API_KEY' tanımlanmadığı için asistan akıllı simülasyon modunda çalışıyor. (API anahtarı eklendiğinde doğrudan canlı Gemini modellerine bağlanacaktır.)")
+            
+            if "gemini_messages" not in st.session_state:
+                st.session_state.gemini_messages = [
+                    {"role": "assistant", "content": f"Merhaba! Ben AB Uyum Asistanınızım. Yüklediğiniz toplam {len(df)} ürünü analiz ettim. Sormak istediğiniz soruları bekliyorum."}
+                ]
+                
+            for message in st.session_state.gemini_messages:
                 with st.chat_message(message["role"]):
                     st.markdown(message["content"])
-            if prompt := st.chat_input("Sorunuzu yazın..."):
-                st.session_state.messages.append({"role": "user", "content": prompt})
+                    
+            if prompt := st.chat_input("Örn: Hangi ürünlerimde gümrük riski var ve nasıl çözerim?"):
+                st.session_state.gemini_messages.append({"role": "user", "content": prompt})
                 with st.chat_message("user"):
                     st.markdown(prompt)
+                    
                 with st.chat_message("assistant"):
-                    yanit = f"Analiz edildi: '{prompt}' konusunda tedarik zinciri şeffaflığı için belgelerinizi güncel tutmalısınız."
+                    with st.spinner("Gemini düşünüyor..."):
+                        if api_key:
+                            try:
+                                genai.configure(api_key=api_key)
+                                model = genai.GenerativeModel('gemini-1.5-flash')
+                                context = f"Kullanıcının yüklediği Excel dosyalarında toplam {len(df)} ürün var. {len(eksikler_df)} üründe ihlal var."
+                                response = model.generate_text(prompt=f"Bağlam: {context}\n\nSoru: {prompt}")
+                                yanit = response.result if hasattr(response, 'result') else "Yanıt oluşturulamadı."
+                            except Exception as e:
+                                yanit = f"API bağlantı hatası: {str(e)}"
+                        else:
+                            # Akıllı Fallback / Simülasyon Yanıtı
+                            if "risk" in prompt.lower() or "red" in prompt.lower():
+                                yanit = f"Sevkiyat portföyünüzde toplam {len(eksikler_df)} adet riskli ürün saptandı. Özellikle sertifika süresi dolmuş veya sektörel normlara uymayan ürünler gümrükte takılabilir."
+                            elif "tekstil" in prompt.lower():
+                                yanit = "Tekstil ihracatında AB gümrükleri OEKO-TEX, GOTS veya REACH standartlarını zorunlu kılar. Bu belgeler eksikse ürünler reddedilir."
+                            else:
+                                yanit = f"Yüklediğiniz {len(df)} ürünün verilerini inceledim. ESPR regülasyonlarına tam uyum sağlamak için eksik menşei ve sertifika bilgilerini Excel tablonuzda güncellemeniz gerekmektedir."
+                                
                     st.markdown(yanit)
-                    st.session_state.messages.append({"role": "assistant", "content": yanit})
+                    st.session_state.gemini_messages.append({"role": "assistant", "content": yanit})
 
-        # --- SEKME 5: ZENGİNLEŞTİRİLMİŞ AB UYUM & MEVZUAT BİLGİ BANKASI (YENİ) ---
+        # --- SEKME 5: MEVZUAT ---
         with tab5:
             st.subheader("📚 AB Sürdürülebilir Ürünler Ekolojik Tasarım (ESPR) Bilgi Bankası")
-            st.markdown("Avrupa Birliği'nin 2024/1781 sayılı tüzüğü kapsamında üreticilerin ve ihracatçıların bilmesi gereken kritik regülasyon başlıkları:")
-            
-            with st.expander("📌 1. ESPR (Ecodesign for Sustainable Products Regulation) Nedir?"):
-                st.markdown("ESPR, AB pazarında satılan neredeyse tüm fiziksel malların çevresel sürdürülebilirliğini artıran yeni bir yasal çerçevedir. Ürünlerin dayanıklılığından geri dönüştürülebilirliğine kadar her adımı denetler.")
-                
-            with st.expander("📌 2. Sektörel Normlar ve Zorunlu Sertifikalar Matrisi"):
-                st.markdown("""
-                * **Tekstil:** OEKO-TEX, REACH, GOTS (Kimyasal kısıtlaması ve organik hammadde doğrulaması).
-                * **Elektronik & Beyaz Eşya:** RoHS, WEEE, CE (Tehlikeli madde kısıtlaması ve e-atık yönetimi).
-                * **Mobilya:** FSC (Sürdürülebilir ormancılık ve ahşap menşei).
-                * **Otomotiv:** IATF 16949, REACH (Kalite ve kimyasal uyumluluk).
-                """)
-                
-            with st.expander("📌 3. Gümrük Reddi Riskini Azaltma Stratejileri"):
-                st.markdown("""
-                1. **Zamanında Güncelleme:** Sertifika bitiş tarihlerini periyodik olarak kontrol edin.
-                2. **Menşei Şeffaflığı:** Hammadde tedarikçilerinizden gelen belgelerin doğruluğunu UYAP / sistemler üzerinden doğrulayın.
-                3. **Karbon Takibi:** Ürün başına düşen CO2e emisyonlarını ISO 14064 standartlarına göre raporlayın.
-                """)
-                
-            with st.expander("📌 4. Dijital Ürün Pasaportu (DPP) Zorunluluk Takvimi"):
-                st.markdown("""
-                * **Şubat 2027:** Endüstriyel ve taşınabilir piller.
-                * **2027 Boyunca:** Tekstil, moda, tüketici elektroniği ve lastikler.
-                * **2028 - 2030:** Ambalaj, mobilya, kimyasallar ve diğer tüketim malları.
-                """)
+            st.markdown("Avrupa Birliği'nin 2024/1781 sayılı tüzüğü kapsamında üreticilerin bilmesi gereken kritik regülasyonlar.")
+            with st.expander("📌 1. ESPR Nedir?"):
+                st.markdown("Ürünlerin dayanıklılığından geri dönüştürülebilirliğine kadar her adımı denetleyen yeni yasal çerçevedir.")
+            with st.expander("📌 2. Sektörel Normlar Matrisi"):
+                st.markdown("Tekstil: OEKO-TEX/REACH, Elektronik: RoHS/WEEE, Mobilya: FSC.")
     else:
         st.error("Yüklenen dosyalarda zorunlu sütunlar eksik.")
 else:
