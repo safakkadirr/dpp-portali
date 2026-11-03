@@ -1,38 +1,73 @@
 import streamlit as st
 import pandas as pd
+import io
 
-# Sayfa Ayarları
-st.set_page_config(page_title="DPP Uyum Portalı", layout="wide")
+# 1. Sayfa Ayarları (Kurumsal Geniş Ekran)
+st.set_page_config(page_title="DPP Kurumsal Yönetim Paneli", layout="wide")
 
-# Başlık ve Açıklama
-st.title("🌍 Dijital Ürün Pasaportu (DPP) Uyum Portalı")
-st.markdown("Tedarikçi ve ürün verilerinizi sisteme yükleyerek Avrupa Birliği ESPR kriterlerine göre **Gap (Eksik) Analizi** yapabilirsiniz.")
-st.divider()
+st.title("🌍 Dijital Ürün Pasaportu (DPP) Yönetim Paneli")
+st.markdown("Kurumsal verileriniz üzerinden Avrupa Birliği ESPR kriterlerine göre **Gap (Eksik) Analizi** ve Uyum Raporlaması.")
 
-# Dosya Yükleme Alanı
-uploaded_file = st.file_uploader("Lütfen ürün verilerinizi içeren Excel (.xlsx) dosyasını sürükleyip bırakın", type=["xlsx", "xls"])
+# 2. Sol Menü (Sidebar) Ayarları
+st.sidebar.header("📁 Veri Yükleme")
+uploaded_file = st.sidebar.file_uploader("Ürün Excel Dosyanızı Yükleyin", type=["xlsx", "xls"])
 
 if uploaded_file is not None:
-    # Dosya yüklendiyse oku
     df = pd.read_excel(uploaded_file)
     
-    st.subheader("📌 1. Sisteme Yüklenen Ham Veriler")
-    st.dataframe(df, use_container_width=True)
-    
-    st.divider()
-    st.subheader("⚠️ 2. Gap (Eksik Veri) Analizi Raporu")
-    
-    # Gerekli sütunlar var mı diye kontrol et
-    if 'Cevre_Sertifikasi' in df.columns and 'Hammadde_Mensei' in df.columns:
-        eksikler = df[df['Cevre_Sertifikasi'].isnull() | df['Hammadde_Mensei'].isnull()]
+    # Gerekli sütunlar var mı kontrolü
+    if set(['Cevre_Sertifikasi', 'Hammadde_Mensei', 'Sektor']).issubset(df.columns):
         
-        if not eksikler.empty:
-            st.error(f"DİKKAT! Toplam {len(eksikler)} üründe kritik veri veya belge eksikliği tespit edildi. Bu ürünler DPP onayı alamaz.")
-            st.dataframe(eksikler[['Sektor', 'Urun_Kodu', 'Urun_Adi', 'Cevre_Sertifikasi', 'Hammadde_Mensei']], use_container_width=True)
+        # Eksik verileri tespit etme mantığı
+        df['Eksik_Var_Mi'] = df['Cevre_Sertifikasi'].isnull() | df['Hammadde_Mensei'].isnull()
+        eksikler_df = df[df['Eksik_Var_Mi']]
+        
+        # 3. Tepe Metrikleri (KPI Kartları)
+        st.subheader("📊 Yönetici Özeti")
+        col1, col2, col3 = st.columns(3)
+        col1.metric("📦 Toplam İncelenen Ürün", len(df))
+        col2.metric("✅ DPP'ye Uygun Ürün", len(df) - len(eksikler_df))
+        col3.metric("🚨 Kritik Eksik (Aksiyon Bekleyen)", len(eksikler_df))
+        
+        st.divider()
+        
+        # 4. Sol Menü Filtreleme Sistemi
+        st.sidebar.subheader("🔍 Filtreler")
+        sektorler = df['Sektor'].dropna().unique().tolist()
+        secilen_sektor = st.sidebar.multiselect("Görüntülenecek Sektörleri Seçin", sektorler, default=sektorler)
+        
+        # Veriyi filtreye göre daralt
+        filtrelenmis_eksikler = eksikler_df[eksikler_df['Sektor'].isin(secilen_sektor)]
+        
+        if not filtrelenmis_eksikler.empty:
+            st.error(f"DİKKAT! Seçili sektörlerde toplam {len(filtrelenmis_eksikler)} üründe zorunlu DPP verisi eksik. Bu ürünler gümrük onayı alamaz.")
+            st.dataframe(filtrelenmis_eksikler[['Sektor', 'Urun_Kodu', 'Urun_Adi', 'Cevre_Sertifikasi', 'Hammadde_Mensei']], use_container_width=True)
             
-            st.warning("Yönetici Özeti: Eksiklerin Sektörel Dağılımı")
-            st.bar_chart(eksikler['Sektor'].value_counts())
+            # Alt kısıma Grafik ve Buton için 2 sütun açıyoruz
+            alt_sol, alt_sag = st.columns([2, 1])
+            
+            with alt_sol:
+                st.warning("📉 Hatalı Ürünlerin Sektörel Dağılımı")
+                st.bar_chart(filtrelenmis_eksikler['Sektor'].value_counts())
+                
+            with alt_sag:
+                st.info("💡 Hatalı listeyi tedarikçilerinize göndermek için aşağıdan Excel formatında indirebilirsiniz.")
+                # Excel olarak indirme motoru
+                output = io.BytesIO()
+                with pd.ExcelWriter(output, engine='openpyxl') as writer:
+                    filtrelenmis_eksikler.to_excel(writer, index=False, sheet_name='Duzeltilecek_Urunler')
+                rapor_verisi = output.getvalue()
+                
+                st.download_button(
+                    label="📥 Düzeltilecekler Raporunu İndir",
+                    data=rapor_verisi,
+                    file_name="dpp_eksik_raporu.xlsx",
+                    mime="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+                    use_container_width=True
+                )
         else:
-            st.success("✅ Mükemmel! Yüklenen Excel dosyasındaki tüm ürünler DPP standartlarına uygun ve eksiksiz.")
+            st.success("✅ Harika! Seçili sektörlerdeki tüm ürünler DPP standartlarına uygun. Kritik bir eksik bulunamadı.")
     else:
-        st.error("Yüklenen dosyada aranan zorunlu sütunlar bulunamadı. Lütfen Excel şablonunuzu kontrol edin.")
+        st.error("Yüklenen dosyada 'Cevre_Sertifikasi', 'Hammadde_Mensei' veya 'Sektor' sütunları bulunamadı. Lütfen şablonu kontrol edin.")
+else:
+    st.info("👈 Analize başlamak için lütfen sol menüden Excel dosyanızı yükleyin.")
