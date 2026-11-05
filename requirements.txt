@@ -1,7 +1,9 @@
-streamlit>=1.40
+streamlit>=1.45
 pandas>=2.0
-openpyxl
-xlrd
-qrcode[pil]
-Pillow
-google-genai
+openpyxl>=3.1
+xlrd>=2.0
+reportlab>=4.0
+qrcode[pil]>=7.4
+Pillow>=10.0
+psycopg[binary]>=3.1
+google-genai>=1.0
