@@ -47,10 +47,12 @@ def test_parola_ve_kilit(db):
         security.kullanici_olustur(db, "x@b.co", "X", "editor", "kisa", f)
 
 
-def test_gorevler_ayriligi():
-    assert security.yetkili("editor", "veri_duzenle") and not security.yetkili("editor", "belge_dogrula")
-    assert security.yetkili("denetci", "belge_dogrula") and not security.yetkili("denetci", "veri_duzenle")
-    assert not security.yetkili("izleyici", "veri_duzenle")
+def test_esit_yetkiler():
+    for rol in ("firma_yonetici", "editor", "denetci", "izleyici"):
+        for eylem in ("veri_duzenle", "belge_dogrula", "urun_dogrula", "pasaport_yayimla", "kullanici_yonet", "iz_gor"):
+            assert security.yetkili(rol, eylem)
+        assert not security.yetkili(rol, "firma_yonet") and not security.yetkili(rol, "kural_yonet")
+    assert security.yetkili("platform_yonetici", "firma_yonet")
 
 
 def test_demo_durumlari(db, firma):

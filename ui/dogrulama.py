@@ -1,4 +1,4 @@
-"""Bağımsız doğrulama: belgelerin incelenmesi ve ürün doğrulama beyanı (görevler ayrılığı)."""
+"""Bağımsız doğrulama: belgelerin incelenmesi ve ürün doğrulama beyanı."""
 
 from __future__ import annotations
 
@@ -14,7 +14,7 @@ def sayfa():
     f = o.firma_gerekli()
     db = o.db()
     o.sayfa_basligi("Bağımsız Doğrulama", "Belgelerin ve ürün verisinin bağımsız doğrulayıcı tarafından incelenmesi. "
-                                          "Veriyi giren kullanıcı doğrulama yapamaz.")
+                                          "Her doğrulama, yapan kişinin adıyla denetim izine kaydedilir.")
     s = st.tabs(["Belge doğrulama", "Ürün doğrulama beyanı", "Doğrulama geçmişi"])
     with s[0]:
         belgeler = repo.belgeler(db, f)

@@ -16,35 +16,28 @@ from .db import Veritabani, simdi
 # Roller ve yetkiler
 # ---------------------------------------------------------------------------
 
+# Firma içinde tüm kullanıcılar eşittir: herkes veri girebilir, doğrulayabilir, pasaport yayımlayabilir,
+# kullanıcı ekleyebilir. Eski sürümden kalan rol kodları (editor, denetci, izleyici) da "Kullanıcı" sayılır.
+# Tek ayrım platform düzeyindedir: firmaları ve tüm firmaları etkileyen kural setini yalnızca
+# platform yöneticisi yönetir (bir firmanın kullanıcısı diğer firmaları göremez).
 ROLLER = {
     "platform_yonetici": "Platform yöneticisi",
-    "firma_yonetici": "Firma yöneticisi",
-    "editor": "Veri sorumlusu",
-    "denetci": "Bağımsız doğrulayıcı",
-    "izleyici": "İzleyici (salt okunur)",
+    "firma_yonetici": "Kullanıcı",
+    "editor": "Kullanıcı",
+    "denetci": "Kullanıcı",
+    "izleyici": "Kullanıcı",
 }
+YENI_KULLANICI_ROLU = "firma_yonetici"
 
-# Görevler ayrılığı: veriyi giren doğrulayamaz, doğrulayan veri değiştiremez.
-YETKILER = {
-    "veri_duzenle": {"firma_yonetici", "editor"},
-    "belge_yukle": {"firma_yonetici", "editor"},
-    "belge_dogrula": {"denetci", "platform_yonetici"},
-    "urun_dogrula": {"denetci", "platform_yonetici"},
-    "pasaport_yayimla": {"firma_yonetici"},
-    "talep_olustur": {"firma_yonetici", "editor"},
-    "degerlendir": {"firma_yonetici", "editor", "denetci", "platform_yonetici"},
-    "kullanici_yonet": {"firma_yonetici", "platform_yonetici"},
-    "firma_ayarlari": {"firma_yonetici", "platform_yonetici"},
-    "firma_yonet": {"platform_yonetici"},
-    "kural_yonet": {"platform_yonetici"},
-    "iz_gor": {"firma_yonetici", "denetci", "platform_yonetici"},
-    "rapor_al": {"firma_yonetici", "editor", "denetci", "izleyici", "platform_yonetici"},
-    "yapay_zeka": {"firma_yonetici", "editor", "denetci", "platform_yonetici"},
-}
+PLATFORM_YETKILERI = {"firma_yonet", "kural_yonet"}
 
 
 def yetkili(rol: str, eylem: str) -> bool:
-    return rol in YETKILER.get(eylem, set())
+    if not rol:
+        return False
+    if eylem in PLATFORM_YETKILERI:
+        return rol == "platform_yonetici"
+    return True
 
 
 # ---------------------------------------------------------------------------

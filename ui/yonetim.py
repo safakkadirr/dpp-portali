@@ -25,14 +25,17 @@ def kullanicilar_sayfasi():
                                 "Rol": security.ROLLER.get(k["rol"], k["rol"]), "Aktif": "Evet" if k["aktif"] else "Hayır",
                                 "Son giriş": o.tarih_tr(k["son_giris"])} for k in liste]), hide_index=True)
 
-    roller = {v: k for k, v in security.ROLLER.items() if platform or k != "platform_yonetici"}
+    roller = {"Kullanıcı": security.YENI_KULLANICI_ROLU}
+    if platform:
+        roller["Platform yöneticisi"] = "platform_yonetici"
     with st.expander("➕ Yeni kullanıcı"):
         firmalar = {x["unvan"]: x["id"] for x in repo.firmalar(db)} if platform else {}
         with st.form("yeni_kullanici", clear_on_submit=True):
             a, b = st.columns(2)
             ad = a.text_input("Ad soyad *")
             eposta = b.text_input("E-posta *")
-            rol = a.selectbox("Rol", list(roller), index=list(roller.values()).index("editor"))
+            rol = a.selectbox("Rol", list(roller), index=0,
+                              help="Firma kullanıcılarının hepsi aynı yetkilere sahiptir.")
             firma = b.selectbox("Firma", list(firmalar)) if platform and firmalar else None
             st.caption("Geçici parola oluşturulur; kullanıcı ilk girişte değiştirmek zorundadır.")
             if st.form_submit_button("Oluştur", type="primary"):
