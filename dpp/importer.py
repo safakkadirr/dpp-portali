@@ -154,6 +154,61 @@ def _ham_sayfalar(ad: str, icerik: bytes) -> tuple[dict[str, pd.DataFrame], list
     return pd.read_excel(io.BytesIO(icerik), sheet_name=None, header=None, dtype=object), []
 
 
+_BILESEN_SUTUNLARI = ["Uretim_Ulkesi", "Hammadde_Mensei", "_Tedarikci", "_Tedarikci_Ulke"]
+_OZET_KELIMELERI = ("toplam", "ortalama", "genel toplam", "ara toplam", "total", "average", "sum", "subtotal")
+
+
+def _ozet_satiri(deger) -> bool:
+    n = tr_norm(deger)
+    return bool(n) and any(n == k or n.startswith(k + " ") or n.startswith(k + ":") for k in _OZET_KELIMELERI)
+
+
+def _sertifika_no(tur_metni, ayri_no=None):
+    """'GOTS-TR-8821' gibi tür ve numaranın birlikte yazıldığı hücrelerden numarayı ayırır."""
+    if not bos_mu(ayri_no):
+        return metin(ayri_no)
+    t = metin(tur_metni)
+    return t if re.search(r"\d{3,}", t) else None
+
+
+def _karbon_bileseni_mi(baslik) -> bool:
+    n = esleme.normal(baslik)
+    return ("emisyon" in n or "co2" in n or "karbon" in n) and not esleme.finansal_mi(baslik)
+
+
+def _testleri_belgeye_cevir(t: pd.DataFrame) -> pd.DataFrame:
+    """Laboratuvar test satırlarını belge kayıtlarına çevirir (test başına bir rapor)."""
+    satirlar = []
+    for r in t.to_dict("records"):
+        madde = metin(r.get("_Test_Madde"))
+        kimyasal = any(k in tr_norm(madde) for k in ("azo", "amin", "ftalat", "formaldehit", "metal", "kursun", "kadmiyum", "krom",
+                                                     "pfas", "flor", "parafin", "sccp", "nikel", "apeo", "nonilfenol", "reach",
+                                                     "svhc", "dmf", "pah", "organotin"))
+        parcalar = [p for p in [metin(r.get("_Test_Bilesen")), madde] if p]
+        olcum = ""
+        if not bos_mu(r.get("_Test_Olculen")):
+            olcum = f"ölçülen {metin(r.get('_Test_Olculen'))}" + (f" / limit {metin(r.get('_Test_Limit'))}" if not bos_mu(r.get("_Test_Limit")) else "")
+        kapsam = " — ".join(p for p in [", ".join(parcalar), olcum, metin(r.get("_Test_Sonuc")), metin(r.get("_Test_Aksiyon"))] if p)
+        satirlar.append({"Baglanti": metin(r.get("Urun_Kodu")) or "*",
+                         "Belge_Turu": "REACH Ek XVII test raporu" if kimyasal else "Laboratuvar test raporu",
+                         "Belge_No": metin(r.get("Belge_No")) or None, "Duzenleyen": r.get("Duzenleyen"),
+                         "Gecerlilik_Baslangic": r.get("Gecerlilik_Baslangic"), "Kapsam": kapsam[:500],
+                         "_Test_Sonuc": metin(r.get("_Test_Sonuc")), "_Test_Ozet": olcum,
+                         "_kaynak": r.get("_kaynak"), "_satir": r.get("_satir")})
+    return pd.DataFrame(satirlar)
+
+
+def _test_sonucu(metin_) -> str:
+    n = tr_norm(metin_)
+    if any(k in n for k in ("uyumsuz", "uygun degil", "red", "fail", "basarisiz", "olumsuz", "kaldi")):
+        return "olumsuz"
+    if any(k in n for k in ("sartli", "kosullu", "conditional")):
+        return "sartli"
+    if any(k in n for k in ("uyumlu", "uygun", "gecti", "pass", "olumlu", "basarili")):
+        return "olumlu"
+    return ""
+
+
 def _slug(metin_) -> str:
     s = re.sub(r"[^A-Z0-9]+", "-", tr_norm(metin_).upper()).strip("-")
     return s[:40] or "URUN"
@@ -169,7 +224,7 @@ def oku(dosyalar: list[tuple[str, bytes]], db: Veritabani, firma_id: int,
     """
     elle, elle_tur = elle or {}, elle_tur or {}
     o = Onizleme()
-    parcalar: dict[str, list[pd.DataFrame]] = {k: [] for k in ILGILI_SAYFALAR}
+    parcalar: dict[str, list[pd.DataFrame]] = {k: [] for k in ILGILI_SAYFALAR + ["Testler"]}
 
     for ad, icerik in dosyalar:
         try:
@@ -220,9 +275,18 @@ def oku(dosyalar: list[tuple[str, bytes]], db: Veritabani, firma_id: int,
                                             "Eşlenen alan": f"— {durum}", "Güven": 0, "Yöntem": ""})
             yeniden = {b: k for b, (k, _, _) in e.eslesme.items()}
             kalan = [b for b in basliklar if b not in yeniden and b not in e.dpp_disi and yerel_elle.get(b) != esleme.YOK_SAY]
-            df = df[list(yeniden) + (kalan if e.tur == "Urunler" else [])].rename(columns=yeniden)
+            saklanan = kalan if e.tur in ("Urunler", "Tedarikciler") else []
+            df = df[list(yeniden) + saklanan].rename(columns=yeniden)
             if e.tur == "Urunler":
-                df = df.rename(columns={b: f"~{b}" for b in kalan})
+                # Karbon bileşenleri (ör. 'Hammadde Emisyonu (kg CO2e)'): toplam karbon boşsa toplanır
+                for b in list(saklanan):
+                    if _karbon_bileseni_mi(b) and yerel_elle.get(b) is None:
+                        df = df.rename(columns={b: f"_KB_{b}"})
+                        saklanan.remove(b)
+                        for r in o.esleme_raporu:
+                            if r["anahtar"] == f"{anahtar}|{b}":
+                                r["Eşlenen alan"] = "— Karbon bileşeni (toplam boşsa toplanır)"
+            df = df.rename(columns={b: f"~{b}" for b in saklanan})
             df["_kaynak"] = f"{ad} / {sayfa_adi}"
             df["_satir"] = [int(i) + 1 for i in df.index]
             if e.tur == "Belgeler" and "Baglanti" not in df.columns:
@@ -230,6 +294,18 @@ def oku(dosyalar: list[tuple[str, bytes]], db: Veritabani, firma_id: int,
                 o.varsayilanlar.append(f"{ad} / {sayfa_adi}: belgelerin bağlı olduğu ürün belirtilmemiş; belgeler tüm firmaya bağlanacak.")
             parcalar[e.tur].append(df.reset_index(drop=True))
 
+    if parcalar["Testler"]:
+        testler = _testleri_belgeye_cevir(pd.concat(parcalar.pop("Testler"), ignore_index=True))
+        parcalar["Belgeler"].append(testler)
+        olumsuz = [f"{r['Baglanti']} ({r['_Test_Ozet'] or r['_Test_Sonuc']})" for r in testler.to_dict("records")
+                   if _test_sonucu(r["_Test_Sonuc"]) == "olumsuz"]
+        o.varsayilanlar.append(f"{len(testler)} laboratuvar testi, test raporu belgesi olarak kaydedilecek. Olumlu sonuçlu raporlar "
+                               "doğrulama bekleyecek; olumsuz sonuçlular kanıt sayılmaz.")
+        if olumsuz:
+            o.uyarilar.append(f"{len(olumsuz)} test sonucu UYUMSUZ: {'; '.join(olumsuz[:5])}. Bu raporlar 'Reddedildi' durumunda "
+                              "kaydedilecek ve ilgili ürünlerde kimyasal uygunluk eksik görünecek.")
+    else:
+        parcalar.pop("Testler", None)
     for tur, liste in parcalar.items():
         o.sayfalar[tur] = pd.concat(liste, ignore_index=True) if liste else pd.DataFrame()
 
@@ -245,6 +321,12 @@ def oku(dosyalar: list[tuple[str, bytes]], db: Veritabani, firma_id: int,
             if k not in u.columns:
                 u[k] = None
         u["Urun_Kodu"] = u["Urun_Kodu"].map(metin)
+        # Toplam / ortalama gibi özet satırlarını ayıkla
+        ozet_mi = u.apply(lambda r: r["Urun_Kodu"] == "" and _ozet_satiri(r.get("Urun_Adi")), axis=1) | \
+            u["Urun_Kodu"].map(_ozet_satiri)
+        if ozet_mi.sum():
+            o.varsayilanlar.append(f"{int(ozet_mi.sum())} özet satırı (toplam, ortalama vb.) ürün olarak alınmadı.")
+            u = u[~ozet_mi].copy()
         # Ürün kodu yoksa: önce GTIN, sonra ürün adından türetilmiş kod
         kodsuz = u["Urun_Kodu"] == ""
         gtinli = kodsuz & u["GTIN"].map(lambda v: bool(gtin_temizle(v)))
@@ -260,10 +342,61 @@ def oku(dosyalar: list[tuple[str, bytes]], db: Veritabani, firma_id: int,
         for r in kimliksiz.to_dict("records"):
             o.atlanacak.append({"Kaynak": r["_kaynak"], "Satır": r["_satir"], "Ürün": "—", "Neden": "Ürün kodu, adı veya barkodu yok"})
         u = u[u["Urun_Kodu"] != ""].copy()
+        # Ürün ağacı (BOM) biçimi: her satır bir bileşen → bileşen satırları ayrı tutulur
+        if "_Bilesen" in u.columns:
+            bom = u[~u["_Bilesen"].map(bos_mu)].copy()
+            if not bom.empty:
+                o.sayfalar["_BOM"] = bom
+                o.varsayilanlar.append(f"Ürün ağacı biçimi algılandı: {bom['Urun_Kodu'].nunique()} ürün için {len(bom)} bileşen satırı "
+                                       "okundu. Her bileşen malzeme satırı olarak; bileşenin tedarikçisi, menşei ve sertifikası da "
+                                       "ilgili kayıtlara aktarılacak. Bileşenlerin ağırlık oranları dosyada olmadığı için boş kalacak.")
+                # Bileşen satırındaki menşe, bileşenin menşeidir; ürünün hammadde menşei olarak ülkeleri özetlenir
+                if "Uretim_Ulkesi" in bom.columns and "Hammadde_Mensei" not in bom.columns:
+                    ulkeler = bom.groupby("Urun_Kodu")["Uretim_Ulkesi"].agg(
+                        lambda x: ", ".join(dict.fromkeys(re.sub(r"\s*\(.*?\)", "", metin(v)).strip() for v in x if not bos_mu(v))))
+                    u["Hammadde_Mensei"] = u["Urun_Kodu"].map(ulkeler)
+                    u["Uretim_Ulkesi"] = None
+                    o.sayfalar["_BOM"] = bom
+                    o.varsayilanlar.append("Ürün ağacındaki 'Menşei' sütunu bileşenlerin menşei olarak alındı; ürünün hammadde menşei "
+                                           "bu ülkelerden oluşturuldu. Ürünün kendi üretim (menşe) ülkesi dosyada olmadığı için boş kalacak.")
+                # bileşene ait sütunlar ürün düzeyine yalnızca tüm satırlarda aynıysa taşınır
+                for k in [c for c in u.columns if (c in _BILESEN_SUTUNLARI and c != "Hammadde_Mensei") or str(c).startswith("~")]:
+                    tekil = bom.groupby("Urun_Kodu")[k].agg(lambda x: x.dropna().astype(str).unique().tolist())
+                    farkli = tekil[tekil.map(len) > 1].index
+                    u.loc[u["Urun_Kodu"].isin(farkli), k] = None
+                u = u.drop(columns=[c for c in ("_Malzeme_Bilesimi", "_Cevre_Sertifikasi", "_Sertifika_No", "_Sertifika_Bitis")
+                                    if c in u.columns])
+        # Aynı ürün birden fazla satırda / sayfada geçiyorsa bilgiler birleştirilir (boş olmayan son değer geçerli)
         tekrar = u[u["Urun_Kodu"].duplicated()]["Urun_Kodu"].unique().tolist()
         if tekrar:
-            o.uyarilar.append(f"{len(tekrar)} ürün kodu birden fazla satırda var (ör. {', '.join(tekrar[:5])}); son satır esas alınacak.")
-            u = u.drop_duplicates("Urun_Kodu", keep="last")
+            celiski = []
+            for kolon in [c for c in u.columns if not str(c).startswith(("_", "~")) and c != "Urun_Kodu"]:
+                farkli = u.dropna(subset=[kolon]).groupby("Urun_Kodu")[kolon].nunique()
+                if (farkli > 1).any():
+                    celiski.append(kolon)
+            kaynaklar = u.groupby("Urun_Kodu")["_kaynak"].agg(lambda x: " + ".join(dict.fromkeys(x)))
+            satirlar = u.groupby("Urun_Kodu")["_satir"].first()
+            u = u.replace({"": None}).groupby("Urun_Kodu", sort=False).last().reset_index()
+            u["_kaynak"] = u["Urun_Kodu"].map(kaynaklar)
+            u["_satir"] = u["Urun_Kodu"].map(satirlar)
+            if "_BOM" not in o.sayfalar:
+                o.varsayilanlar.append(f"{len(tekrar)} ürün birden fazla satırda veya sayfada geçiyor (ör. {', '.join(tekrar[:5])}); "
+                                       "bilgileri tek üründe birleştirildi.")
+            if celiski:
+                o.uyarilar.append(f"Aynı ürün için farklı sayfalarda farklı değer girilmiş sütunlar var ({', '.join(celiski[:5])}); "
+                                  "dosyadaki en son değer kullanılacak.")
+        kb = [c for c in u.columns if str(c).startswith("_KB_")]
+        if kb:
+            if "Karbon_Ayak_Izi_kgCO2e" not in u.columns:
+                u["Karbon_Ayak_Izi_kgCO2e"] = None
+            toplam = u[kb].apply(lambda r: sum(sayi(v) or 0 for v in r) if any(sayi(v) is not None for v in r) else None, axis=1)
+            bos = u["Karbon_Ayak_Izi_kgCO2e"].map(lambda v: sayi(v) is None) & toplam.notna()
+            if bos.sum():
+                u.loc[bos, "Karbon_Ayak_Izi_kgCO2e"] = toplam[bos].round(4)
+                o.varsayilanlar.append(f"{int(bos.sum())} üründe toplam karbon ayak izi boştu; "
+                                       f"{', '.join(c[4:] for c in kb)} sütunları toplanarak hesaplandı. (Excel'deki formüllerin "
+                                       "sonucu dosyaya kaydedilmemişse bu sütunlar boş görünür.)")
+            u = u.drop(columns=kb)
         adsiz = u["Urun_Adi"].map(bos_mu) & ~u["Urun_Kodu"].isin(mevcut_kodlar)
         if adsiz.sum():
             u.loc[adsiz, "Urun_Adi"] = u.loc[adsiz, "Urun_Kodu"]
@@ -374,9 +507,12 @@ def uygula(db: Veritabani, firma_id: int, o: Onizleme, kullanici: str, bilinmeye
     gecersiz_sayi = 0
     kesirli = o.sayfalar.get("Malzemeler", pd.DataFrame()).attrs.get("kesirli", set())
 
+    from contextlib import nullcontext
+    kurtarma = getattr(db, "kurtarma_noktasi", None) or nullcontext
+
     def dene(kaynak, satir, urun, is_):
         try:
-            with db.kurtarma_noktasi():
+            with kurtarma():
                 is_()
             return True
         except Exception as hata:
@@ -396,9 +532,12 @@ def uygula(db: Veritabani, firma_id: int, o: Onizleme, kullanici: str, bilinmeye
             if _s(r, "Unvan"):
                 def is_(r=r):
                     tid = repo.tedarikci_bul_veya_ekle(db, firma_id, r["Unvan"])
-                    db.guncelle("tedarikciler", tid, {k2: metin(_s(r, k1)) for k1, k2 in
-                                                      (("Ulke", "ulke"), ("Eposta", "eposta"), ("Yetkili", "yetkili"),
-                                                       ("Kimlik_No", "kimlik_no")) if _s(r, k1)}, firma_id)
+                    guncel = {k2: metin(_s(r, k1)) for k1, k2 in (("Ulke", "ulke"), ("Eposta", "eposta"), ("Yetkili", "yetkili"),
+                                                                    ("Kimlik_No", "kimlik_no")) if _s(r, k1)}
+                    ek = "; ".join(f"{k[1:]}: {metin(v)}" for k, v in r.items() if str(k).startswith("~") and not bos_mu(v))
+                    if ek and bilinmeyenleri_nota:
+                        guncel["notlar"] = f"[Excel ek bilgi: {ek}]"
+                    db.guncelle("tedarikciler", tid, guncel, firma_id)
                 if dene(r.get("_kaynak"), r.get("_satir"), r["Unvan"], is_):
                     sayac["tedarikci"] += 1
 
@@ -459,7 +598,7 @@ def uygula(db: Veritabani, firma_id: int, o: Onizleme, kullanici: str, bilinmeye
                 turler = _sertifikalari_bol(r["_Cevre_Sertifikasi"])
                 for t in turler:
                     urun_belgeleri.append({"Baglanti": kod, "Belge_Turu": t, "_kaynak": r.get("_kaynak"), "_satir": r.get("_satir"),
-                                           "Belge_No": r.get("_Sertifika_No") if len(turler) == 1 else None,
+                                           "Belge_No": _sertifika_no(t, r.get("_Sertifika_No") if len(turler) == 1 else None),
                                            "Gecerlilik_Bitis": r.get("_Sertifika_Bitis")})
             if _s(r, "_Tedarikci"):
                 urun_tedarikci[kod] = (r["_Tedarikci"], _s(r, "_Tedarikci_Ulke") or _s(r, "Hammadde_Mensei"))
@@ -475,6 +614,31 @@ def uygula(db: Veritabani, firma_id: int, o: Onizleme, kullanici: str, bilinmeye
                 gruplar.setdefault(metin(s.get("Urun_Kodu")), []).append(s)
             return gruplar
 
+        bom_asamalari: dict[str, list] = {}
+        for r in o.sayfalar.get("_BOM", pd.DataFrame()).to_dict("records"):
+            kod = metin(r["Urun_Kodu"])
+            if kod not in urun_id:
+                continue
+            ad_ = metin(r["_Bilesen"])
+            komp = metin(_s(r, "_Malzeme_Bilesimi"))
+            mense = _s(r, "Uretim_Ulkesi") or _s(r, "Hammadde_Mensei")
+            satir = {"malzeme": f"{ad_} ({komp})" if komp and tr_norm(komp) not in tr_norm(ad_) else ad_, "oran": None,
+                     "mense": mense, "_tedarikci": _s(r, "_Tedarikci")}
+            tek_hucre_malzeme.setdefault(kod, [])
+            if tek_hucre_malzeme[kod] and "_bom" not in tek_hucre_malzeme[kod][0]:
+                tek_hucre_malzeme[kod] = []
+            satir["_bom"] = True
+            tek_hucre_malzeme[kod].append(satir)
+            if _s(r, "_Tedarikci"):
+                bom_asamalari.setdefault(kod, []).append({"Urun_Kodu": kod, "Asama": ad_, "Tedarikci": r["_Tedarikci"],
+                                                          "Ulke": _s(r, "_Tedarikci_Ulke") or mense})
+            if _s(r, "_Cevre_Sertifikasi"):
+                for t in _sertifikalari_bol(r["_Cevre_Sertifikasi"]):
+                    baglar = kod + (f";TEDARIKCI:{r['_Tedarikci']}" if _s(r, "_Tedarikci") else "")
+                    urun_belgeleri.append({"Baglanti": baglar, "Belge_Turu": t, "Belge_No": _sertifika_no(t, r.get("_Sertifika_No")),
+                                           "Gecerlilik_Bitis": r.get("_Sertifika_Bitis"), "_kaynak": r.get("_kaynak"),
+                                           "_satir": r.get("_satir")})
+
         malzeme_gruplari = grupla("Malzemeler")
         for kod, liste in tek_hucre_malzeme.items():
             malzeme_gruplari.setdefault(kod, liste)
@@ -486,7 +650,10 @@ def uygula(db: Veritabani, firma_id: int, o: Onizleme, kullanici: str, bilinmeye
                 temiz = []
                 for s in satirlar:
                     if "malzeme" in s:
-                        temiz.append(s)
+                        satir = {k: v for k, v in s.items() if not k.startswith("_")}
+                        if s.get("_tedarikci"):
+                            satir["tedarikci_id"] = repo.tedarikci_bul_veya_ekle(db, firma_id, s["_tedarikci"])
+                        temiz.append(satir)
                         continue
                     oran = sayi(_s(s, "Oran_Yuzde"))
                     if oran is not None and kod in kesirli:
@@ -515,6 +682,14 @@ def uygula(db: Veritabani, firma_id: int, o: Onizleme, kullanici: str, bilinmeye
             dene("Partiler", "—", kod, is_)
 
         asama_gruplari = grupla("Tedarik_Zinciri")
+        for kod, liste in bom_asamalari.items():
+            if kod not in asama_gruplari:
+                gorulen, tekil = set(), []
+                for a in liste:
+                    if (a["Asama"], a["Tedarikci"]) not in gorulen:
+                        gorulen.add((a["Asama"], a["Tedarikci"]))
+                        tekil.append(a)
+                asama_gruplari[kod] = tekil
         for kod, satirlar in asama_gruplari.items():
             if kod not in urun_id:
                 continue
@@ -527,9 +702,11 @@ def uygula(db: Veritabani, firma_id: int, o: Onizleme, kullanici: str, bilinmeye
                 sayac["asama"] += repo.alt_degistir(db, "tedarik_asamalari", firma_id, urun_id[kod], temiz, kullanici, denetle=False)
             dene("Tedarik zinciri", "—", kod, is_)
 
+        eklenen_ana = 0
         for kod, (unvan, ulke) in urun_tedarikci.items():
             if kod not in urun_id or kod in asama_gruplari or repo.alt_liste(db, "tedarik_asamalari", firma_id, urun_id[kod]):
                 continue
+            eklenen_ana += 1
 
             def is_(kod=kod, unvan=unvan, ulke=ulke):
                 tid = repo.tedarikci_bul_veya_ekle(db, firma_id, unvan, {"ulke": ulke})
@@ -537,7 +714,7 @@ def uygula(db: Veritabani, firma_id: int, o: Onizleme, kullanici: str, bilinmeye
                                   [{"sira": 1, "asama": "Ana tedarikçi", "tedarikci_id": tid, "ulke": ulke}], kullanici, denetle=False)
                 sayac["asama"] += 1
             dene("Ürünler", "—", kod, is_)
-        if urun_tedarikci:
+        if eklenen_ana:
             notlar.append("Ürün satırındaki tedarikçi bilgisi, tedarik zinciri girilmemiş ürünlerde 'Ana tedarikçi' aşaması olarak eklendi.")
 
         belgeler = o.sayfalar.get("Belgeler", pd.DataFrame()).to_dict("records") + urun_belgeleri
@@ -584,8 +761,15 @@ def uygula(db: Veritabani, firma_id: int, o: Onizleme, kullanici: str, bilinmeye
                     mevcut_bag = [(x["hedef_tur"], x["hedef_id"]) for x in
                                   db.tumu("SELECT hedef_tur, hedef_id FROM belge_baglantilari WHERE belge_id = ?", (ayni["id"],))]
                     repo.belge_baglantilari_ayarla(db, firma_id, ayni["id"], mevcut_bag + baglar)
+                    belge_id = ayni["id"]
                 else:
-                    repo.belge_ekle(db, firma_id, veri, baglar, kullanici, kaynak="Excel içe aktarım")
+                    belge_id = repo.belge_ekle(db, firma_id, veri, baglar, kullanici, kaynak="Excel içe aktarım")
+                sonuc_ = _test_sonucu(r.get("_Test_Sonuc"))
+                if sonuc_ == "olumsuz":
+                    db.guncelle("belgeler", belge_id, {"dogrulama_durumu": "Reddedildi", "dogrulayan": "Sistem (test sonucu)",
+                                                       "dogrulama_notu": f"Test sonucu uyumsuz: {metin(r.get('_Test_Ozet'))}"}, firma_id)
+                elif sonuc_ == "sartli":
+                    db.guncelle("belgeler", belge_id, {"dogrulama_notu": f"Şartlı kabul: {metin(r.get('_Test_Ozet'))}"}, firma_id)
                 sayac["belge"] += 1
             dene(r.get("_kaynak", "Belgeler"), r.get("_satir", "—"), metin(_s(r, "Baglanti")) or "—", is_)
 

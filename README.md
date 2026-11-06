@@ -11,7 +11,7 @@ AB'ye ihracat yapan **tüm sektörlerdeki** firmalar için Dijital Ürün Pasapo
 | --- | --- |
 | Giriş ve güvenlik | Kullanıcı girişi, scrypt ile şifrelenmiş parolalar, 5 hatalı denemede 15 dk kilit, 8 saat oturum süresi, ilk girişte zorunlu parola değişikliği |
 | Çok firmalı yapı | Her firmanın verisi ayrıdır; platform yöneticisi tüm firmaları yönetir |
-| Roller | Platform yöneticisi, Firma yöneticisi, Veri sorumlusu, Bağımsız doğrulayıcı, İzleyici. **Görevler ayrılığı:** veriyi giren doğrulayamaz, doğrulayan veriyi değiştiremez |
+| Kullanıcılar | Firma içindeki tüm kullanıcılar eşit yetkilidir. Firmaları ve kural setini yalnızca platform yöneticisi yönetir; firmalar birbirinin verisini göremez |
 | Ürün kartı | Kimlik, menşe, kimyasallar, çevre, sektörel alanlar (CBAM, EPREL, IMDS, batarya); malzeme satırları, tedarik zinciri aşamaları, partiler |
 | İki ayrı gösterge | **Yasal uyum** (bugün yürürlükteki şartlar) ve **DPP hazırlık skoru** (ileride zorunlu olacak veriler) |
 | Yaklaşan yükümlülükler | EUDR (30.12.2026), Batarya pasaportu (18.02.2027) gibi tarihi gelmemiş şartlar ayrı izlenir, tarihi gelince kendiliğinden yasal uyuma geçer |
@@ -21,7 +21,7 @@ AB'ye ihracat yapan **tüm sektörlerdeki** firmalar için Dijital Ürün Pasapo
 | Pasaport | Sürümlü yayım, kritik eksikte yayım engeli, değişmeyen QR adresi, Kamu / Alıcı (B2B) / Otorite görünümleri, geri çekme, JSON-LD, PDF pasaport sayfası |
 | Herkese açık sayfa | QR okutulunca giriş gerektirmeden açılan pasaport sayfası; alıcı erişim koduyla B2B görünümü; içerik bütünlük kontrolü |
 | Tedarikçi portalı | Tedarikçiye hesap açmadan tek kullanımlık bağlantı; SVHC beyanı, malzeme bileşimi, menşe, karbon ve belge toplama; onayla ürüne aktarma |
-| Excel | Şablon, önizlemeli toplu içe aktarım (hata varsa hiçbir şey yazılmaz), tüm veriyi dışa aktarma. Önceki sürümlerin dosyaları da okunur |
+| Excel / CSV | **Akıllı sütun eşleme:** şablon zorunlu değil; ham Excel/CSV başlıkları (Model, Stok Kodu, Artikel, SKU, Bileşen, Kumaş İçeriği, Composition, Menşei, HS Code ...) büyük/küçük harf, boşluk ve Türkçe karakter farkı gözetmeden tanınır. Başlık satırı ve sayfa türü otomatik bulunur; eşleme ekrandan düzeltilebilir. Tek hücredeki bileşim ve sertifika listeleri ayrıştırılır. Maliyet/fiyat gibi DPP dışı sütunlar aktarılmaz. Hatalı satırlar yalnızca kendilerini etkiler, atlananlar nedenleriyle raporlanır. Yasal beyanlara (SVHC, menşe) varsayılan atanmaz |
 | Raporlar | Kapaklı, Roma rakamlı bölümlü PDF "DPP Hazırlık ve Ön Kontrol Raporu"; ayrıntılı Excel raporu |
 | Asistan | Yerel mod (veri dışarı gitmez) veya onaylı ve maskeli Gemini modu |
 | Denetim izi | Tüm işlemler zincirleme özetle kaydedilir; sonradan değiştirilen kayıt tespit edilir |
@@ -40,7 +40,8 @@ dpp/                    Çekirdek (Streamlit'ten bağımsız; ileride FastAPI'ye
   evaluation.py         Değerlendirme kayıtları, doğrulama beyanları
   passport.py           Pasaport içeriği, yayım, erişim seviyeleri
   suppliers.py          Tedarikçi veri talepleri
-  importer.py           Excel içe / dışa aktarım
+  importer.py           Excel / CSV içe ve dışa aktarım
+  esleme.py             Akıllı sütun eşleme (eş anlamlılar, başlık satırı ve sayfa türü tespiti)
   reports.py            PDF ve Excel raporlar, QR
   assistant.py          Uyum asistanı
   regulations.py        Mevzuat bilgi tabanı

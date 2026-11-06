@@ -60,7 +60,8 @@ ALANLAR: dict[str, list[tuple[str, str, list[str]]]] = {
         ("SVHC_Maddeler", "SVHC maddeleri", ["svhc maddeler", "svhc madde", "svhc maddeleri", "cas", "cas no", "svhc cas"]),
         ("Cevresel_Iddia", "Çevresel iddia", ["cevresel iddia", "cevre iddiasi", "iddia", "green claim", "eco claim", "etiket iddiasi",
                                               "pazarlama iddiasi"]),
-        ("Karbon_Ayak_Izi_kgCO2e", "Karbon ayak izi (kg CO2e)", ["karbon ayak izi", "karbon ayak izi kg", "karbon ayak izi kgco2e",
+        ("Karbon_Ayak_Izi_kgCO2e", "Karbon ayak izi (kg CO2e)", ["toplam karbon", "toplam karbon yuku", "toplam karbon ayak izi",
+                                                                 "toplam emisyon", "toplam co2e", "karbon ayak izi", "karbon ayak izi kg", "karbon ayak izi kgco2e",
                                                                  "karbon", "co2", "co2e", "carbon footprint", "pcf", "karbon kg",
                                                                  "karbon salinimi", "emisyon kg"]),
         ("Karbon_Yontemi", "Karbon yöntemi", ["karbon yontemi", "hesaplama yontemi", "lca yontemi", "karbon hesaplama yontemi"]),
@@ -87,7 +88,9 @@ ALANLAR: dict[str, list[tuple[str, str, list[str]]]] = {
         ("_Sertifika_Bitis", "Sertifika bitiş tarihi", ["sertifika bitis", "sertifika bitis tarihi", "gecerlilik", "gecerlilik tarihi",
                                                         "son gecerlilik", "bitis tarihi", "expiry", "expiry date", "valid until",
                                                         "gecerlilik bitis"]),
-        ("_Tedarikci", "Ana tedarikçi", _TEDARIKCI),
+        ("_Tedarikci", "Ana tedarikçi", _TEDARIKCI + ["tedarikci firma", "tedarikci firmasi"]),
+        ("_Bilesen", "Bileşen adı (her satır bir bileşen)", ["bilesen malzeme adi", "bilesen adi", "malzeme adi", "hammadde adi",
+                                                              "component", "component name", "bom kalemi", "alt malzeme", "kalem adi"]),
         ("_Geri_Donusturulebilirlik", "Geri dönüştürülebilirlik oranı (aktarılmaz)",
          ["geri donusturulebilirlik orani", "geri donusturulebilirlik", "recyclability", "geri donusum orani"]),
         ("_Tedarikci_Ulke", "Tedarikçi ülkesi", ["tedarikci ulkesi", "tedarikci ulke", "supplier country"]),
@@ -131,11 +134,26 @@ ALANLAR: dict[str, list[tuple[str, str, list[str]]]] = {
         ("Kapsam", "Kapsam", ["kapsam", "scope", "aciklama"]),
     ],
     "Tedarikciler": [
-        ("Unvan", "Unvan", ["unvan", "tedarikci", "tedarikci adi", "tedarikci unvani", "firma", "firma adi", "supplier", "company"]),
+        ("Unvan", "Unvan", ["firma adi", "unvan", "tedarikci", "tedarikci adi", "tedarikci unvani", "tedarikci firma", "firma", "firma adi",
+                            "supplier", "supplier name", "company"]),
         ("Ulke", "Ülke", _ULKE),
         ("Eposta", "E-posta", ["eposta", "e posta", "email", "e mail", "mail"]),
         ("Yetkili", "Yetkili", ["yetkili", "ilgili kisi", "contact", "contact person"]),
-        ("Kimlik_No", "Vergi no / GLN", ["kimlik no", "vergi no", "vergi numarasi", "vkn", "gln", "tax id"]),
+        ("Kimlik_No", "Vergi no / GLN", ["kimlik no", "vergi no", "vergi numarasi", "vkn", "gln", "tax id", "tedarikci id",
+                                         "tedarikci kodu", "tedarikci no", "supplier id", "supplier code"]),
+    ],
+    "Testler": [
+        ("Urun_Kodu", "Ürün kodu", _KOD),
+        ("Belge_No", "Analiz / rapor no", ["analiz id", "analiz no", "rapor no", "test no", "test id", "lab no", "report no"]),
+        ("_Test_Bilesen", "Test edilen bileşen", ["test edilen bilesen", "test edilen malzeme", "numune", "sample", "tested component"]),
+        ("_Test_Madde", "Aranan madde / parametre", ["aranan zararli madde grubu", "aranan madde", "zararli madde", "parametre",
+                                                    "test parametresi", "madde grubu", "substance", "analiz", "test"]),
+        ("_Test_Limit", "Yasal limit", ["yasal limit", "limit", "sinir deger", "limit deger"]),
+        ("_Test_Olculen", "Ölçülen değer", ["olculen deger", "olculen", "sonuc deger", "measured", "result value"]),
+        ("Duzenleyen", "Laboratuvar", ["test laboratuvari", "laboratuvar", "lab", "laboratory"]),
+        ("_Test_Sonuc", "Uygunluk sonucu", ["uygunluk durumu", "uygunluk", "sonuc", "test sonucu", "result", "pass fail", "durum"]),
+        ("_Test_Aksiyon", "Aksiyon planı", ["aksiyon plani", "aksiyon", "duzeltici faaliyet", "action plan"]),
+        ("Gecerlilik_Baslangic", "Test tarihi", ["test tarihi", "analiz tarihi", "rapor tarihi", "test date"]),
     ],
     "Tesisler": [
         ("Ad", "Tesis adı", ["ad", "tesis adi", "tesis", "fabrika", "fabrika adi", "factory", "plant"]),
@@ -159,6 +177,7 @@ SAYFA_ADI_IPUCU = {
     "Belgeler": ["belge", "sertifika", "certificate", "document"],
     "Tedarikciler": ["tedarikci", "supplier", "vendor"],
     "Tesisler": ["tesis", "fabrika", "factory", "plant"],
+    "Testler": ["test", "analiz", "reach", "kimyasal", "laboratuvar", "lab"],
 }
 ANAHTAR_ALANLAR = {
     "Urunler": {"Urun_Kodu", "Urun_Adi", "GTIN"},
@@ -168,6 +187,7 @@ ANAHTAR_ALANLAR = {
     "Belgeler": {"Belge_Turu"},
     "Tedarikciler": {"Unvan"},
     "Tesisler": {"Ad"},
+    "Testler": {"_Test_Madde", "_Test_Sonuc", "_Test_Olculen"},
 }
 
 
@@ -194,12 +214,45 @@ def _kanonik_normal(k: str) -> str:
     return normal(k.strip("_").replace("_", " "))
 
 
+# Bu kelimeler başlıkta geçerse ilgili alana eşlenmez (ör. "Hammadde Maliyeti" bileşim değildir)
+_FINANS = {"maliyet", "maliyeti", "fiyat", "fiyati", "ucret", "ucreti", "tutar", "tutari", "kar", "marj", "marji", "bedel",
+           "bedeli", "cost", "price", "margin", "usd", "eur", "tl", "try", "doviz"}
+_OLCU = {"emisyon", "emisyonu", "co2", "co2e", "adet", "adedi", "miktar", "miktari", "kg", "mt", "metre", "gram", "kwh"}
+NEGATIF = {
+    "_Malzeme_Bilesimi": _FINANS | _OLCU | {"mensei", "mense", "ulke", "kod", "kodu", "tedarikci", "adi", "id", "no"},
+    "_Bilesen": _FINANS | _OLCU | {"oran", "orani", "mensei", "kod", "kodu"},
+    "Hammadde_Mensei": _FINANS | _OLCU,
+    "Urun_Adi": _FINANS | _OLCU | {"kod", "kodu", "id", "no"},
+    "Urun_Kodu": _FINANS | _OLCU | {"adi", "ismi", "tedarikci"},
+    "Uretim_Tesisi": _FINANS | _OLCU,
+    "Karbon_Ayak_Izi_kgCO2e": _FINANS,
+    "Gomulu_Emisyon_tCO2e_t": _FINANS,
+    "Malzeme": _FINANS | _OLCU | {"kod", "kodu"},
+    "Oran_Yuzde": _FINANS,
+    "_Tedarikci": _FINANS | {"id", "kodu", "no", "ulkesi", "ulke"},
+    "Unvan": _FINANS | {"id", "kodu", "no"},
+    "_Test_Limit": set(), "_Test_Olculen": set(), "_Test_Madde": set(), "_Test_Bilesen": set(), "_Test_Sonuc": set(),
+}
+
+
+def finansal_mi(baslik) -> bool:
+    ham = str(baslik)
+    if any(sem in ham for sem in ("$", "€", "₺", "£")):
+        return True
+    return bool(set(normal(baslik).split()) & _FINANS)
+
+
 def puan(baslik: str, kanonik: str, esler: list[str]) -> tuple[int, str]:
     """(0-100 puan, yöntem)"""
     h = normal(baslik)
     if not h:
         return 0, ""
     hb = h.replace(" ", "")
+    negatif = NEGATIF.get(kanonik, _FINANS)
+    if set(h.split()) & negatif or (kanonik not in ("Karbon_Ayak_Izi_kgCO2e", "Gomulu_Emisyon_tCO2e_t") and finansal_mi(baslik)):
+        tam = {normal(e) for e in esler} | {_kanonik_normal(kanonik)}
+        if h not in tam:
+            return 0, ""
     adaylar = [_kanonik_normal(kanonik)] + [normal(e) for e in esler]
     en_iyi, yontem = 0, ""
     htok = set(h.split())
@@ -229,6 +282,8 @@ def puan(baslik: str, kanonik: str, esler: list[str]) -> tuple[int, str]:
 
 def dpp_disi_mi(baslik: str) -> bool:
     h = normal(baslik)
+    if finansal_mi(baslik):
+        return True
     return any(h == normal(a) or (normal(a) in h.split() and len(a) > 3) for a in DPP_DISI_ANAHTARLAR)
 
 
@@ -304,18 +359,22 @@ def sayfa_turu_bul(sayfa_adi: str, basliklar: list[str], elle_tur: Optional[str]
     return en_iyi
 
 
-def baslik_satiri_bul(ham: pd.DataFrame, en_fazla: int = 15) -> int:
-    """Başlık satırını bulur: tanınan alan sayısı en yüksek olan satır (rapor başlığı, boş satır atlanır)."""
-    en_iyi, en_iyi_sayi = 0, -1
+def baslik_satiri_bul(ham: pd.DataFrame, en_fazla: int = 20) -> int:
+    """
+    Başlık satırını bulur. Öncelik: tanınan alan sayısı; eşitlikte dolu metin hücresi sayısı.
+    Rapor başlığı gibi tek hücreli satırlar başlık sayılmaz.
+    """
     tum = [(k, e) for liste in ALANLAR.values() for k, _, e in liste]
+    adaylar = []
     for i in range(min(en_fazla, len(ham))):
-        hucreler = [str(v) for v in ham.iloc[i].tolist() if isinstance(v, str) and v.strip()]
-        sayi = 0
-        for h in hucreler:
-            if len(h) > 60:
-                continue
-            if max((puan(h, k, e)[0] for k, e in tum), default=0) >= 75:
-                sayi += 1
-        if sayi > en_iyi_sayi:
-            en_iyi, en_iyi_sayi = i, sayi
-    return en_iyi if en_iyi_sayi >= 2 else 0
+        hucreler = [str(v).strip() for v in ham.iloc[i].tolist() if isinstance(v, str) and str(v).strip()]
+        dolu = len(hucreler)
+        if dolu < 2:
+            continue
+        tanınan = sum(1 for h in hucreler if len(h) <= 60 and max((puan(h, k, e)[0] for k, e in tum), default=0) >= 70)
+        # sonraki satır doluysa (veri satırı geliyorsa) başlık olma olasılığı yüksektir
+        adaylar.append((tanınan, dolu, -i, i))
+    if not adaylar:
+        return 0
+    en_iyi = max(adaylar)
+    return en_iyi[3]

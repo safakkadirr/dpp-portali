@@ -14,7 +14,7 @@ from . import audit
 from .catalog import SEKTOR
 from .db import Veritabani, simdi
 from .rules import belge_durumu
-from .util import bos_mu, gtin_temizle, metin
+from .util import bos_mu, gtin_temizle, metin, tr_norm
 
 AZAMI_DOSYA = 10 * 1024 * 1024  # 10 MB
 
@@ -105,6 +105,19 @@ def tedarikciler(db, firma_id) -> list[dict]:
     return db.tumu("SELECT * FROM tedarikciler WHERE firma_id = ? ORDER BY unvan", (firma_id,))
 
 
+_UNVAN_EKLERI = {"san", "sanayi", "tic", "ticaret", "ve", "ltd", "sti", "limited", "sirketi", "as", "a", "s", "anonim", "inc",
+                 "co", "corp", "company", "gmbh", "srl", "sa", "spa", "bv", "llc", "plc", "industries", "industry", "tekstil",
+                 "textile", "textiles"}
+
+
+def unvan_anahtari(ad) -> str:
+    """'Uçur Tekstil San. ve Tic. A.Ş.' ile 'Uçur Tekstil San.' aynı firma sayılsın diye unvan eklerini ayıklar."""
+    import re
+    kelimeler = re.sub(r"[^a-z0-9]+", " ", tr_norm(ad)).split()
+    cekirdek = [k for k in kelimeler if k not in _UNVAN_EKLERI]
+    return " ".join(cekirdek or kelimeler)
+
+
 def _ad_ile_bul_veya_ekle(db, tablo, ad_alani, firma_id, ad, ek: Optional[dict] = None) -> Optional[int]:
     ad = metin(ad)
     if not ad:
@@ -112,6 +125,13 @@ def _ad_ile_bul_veya_ekle(db, tablo, ad_alani, firma_id, ad, ek: Optional[dict] 
     r = db.bir(f"SELECT id FROM {tablo} WHERE firma_id = ? AND LOWER({ad_alani}) = LOWER(?)", (firma_id, ad))
     if r:
         return r["id"]
+    if tablo == "tedarikciler":
+        anahtar = unvan_anahtari(ad)
+        if anahtar:
+            for x in db.tumu(f"SELECT id, {ad_alani} AS ad FROM {tablo} WHERE firma_id = ?", (firma_id,)):
+                diger = unvan_anahtari(x["ad"])
+                if diger and (diger == anahtar or diger.startswith(anahtar + " ") or anahtar.startswith(diger + " ")):
+                    return x["id"]
     veri = {"firma_id": firma_id, ad_alani: ad}
     veri.update({k: v for k, v in (ek or {}).items() if not bos_mu(v)})
     return db.ekle(tablo, veri)

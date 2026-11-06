@@ -37,14 +37,21 @@ CSS = """
 
 
 @st.cache_resource(show_spinner=False)
-def _veritabani(adres: str) -> Veritabani:
+def _veritabani(adres: str, kod_surumu: str) -> Veritabani:
+    # kod_surumu: veritabanı sınıfı değiştiğinde (yeni kod yüklendiğinde) önbellekteki eski bağlantı kullanılmasın
     db = Veritabani(adres)
     db.sema_olustur()
     return db
 
 
 def db() -> Veritabani:
-    return _veritabani(config.veritabani_adresi())
+    import hashlib
+    import inspect
+    try:
+        surum = hashlib.md5(inspect.getsource(Veritabani).encode()).hexdigest()[:10]
+    except Exception:
+        surum = str(id(Veritabani))
+    return _veritabani(config.veritabani_adresi(), surum)
 
 
 # ---------------------------------------------------------------------------

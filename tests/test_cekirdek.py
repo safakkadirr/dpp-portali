@@ -128,3 +128,47 @@ def test_denetim_zinciri(db, firma):
     assert audit.zinciri_dogrula(db)[0]
     db.yaz("UPDATE denetim_izi SET detay = 'oynandı' WHERE id = 3")
     assert not audit.zinciri_dogrula(db)[0]
+
+
+def _excel(sayfalar: dict, baslik_ustu: int = 0) -> bytes:
+    import io
+    import pandas as pd
+    c = io.BytesIO()
+    with pd.ExcelWriter(c) as w:
+        for ad, df in sayfalar.items():
+            df.to_excel(w, sheet_name=ad, index=False, startrow=baslik_ustu)
+    return c.getvalue()
+
+
+def test_akilli_esleme_ham_dosya(db):
+    import pandas as pd
+    f = repo.firma_kaydet(db, {"unvan": "Ham"}, "t")
+    veri = _excel({"Liste": pd.DataFrame({
+        "MODEL KODU": ["A-1", "A-2", None], "Ürün Adı": ["Tişört", "Gömlek", None], "Kumaş İçeriği": ["95% Cotton 5% Elastane", "Keten", None],
+        "Menşei": ["Türkiye", "Türkiye", None], "Maliyet": [3, 4, 5], "Sertifika": ["GOTS, OEKO-TEX", None, None],
+        "Sertifika Bitiş": ["31.08.2027", None, None], "Sezon": ["SS27", "AW26", None]})}, baslik_ustu=2)
+    o = importer.oku([("ham.xlsx", veri)], db, f)
+    alanlar = {r["Excel sütunu"]: r["Alan"] for r in o.esleme_raporu}
+    assert alanlar["MODEL KODU"] == "Urun_Kodu" and alanlar["Kumaş İçeriği"] == "_Malzeme_Bilesimi"
+    assert alanlar["Maliyet"] is None and alanlar["Sezon"] is None
+    s = importer.uygula(db, f, o, "t", bilinmeyenleri_nota=True)
+    assert s.sayac["urun_yeni"] == 2 and s.sayac["belge"] == 2
+    a1 = repo.urun_kod_ile(db, f, "A-1")
+    assert [(m["malzeme"], m["oran"]) for m in repo.alt_liste(db, "malzemeler", f, a1["id"])] == [("Cotton", 95.0), ("Elastane", 5.0)]
+    assert "Sezon: SS27" in a1["notlar"] and a1["sektor_kodu"] == "tekstil" and a1["svhc_beyani"] is None
+    importer.uygula(db, f, importer.oku([("ham.xlsx", veri)], db, f), "t")
+    assert len(repo.urunler(db, f)) == 2 and len(repo.belgeler(db, f)) == 2
+
+
+def test_elle_esleme_ve_satir_hatasi(db):
+    import pandas as pd
+    f = repo.firma_kaydet(db, {"unvan": "Elle"}, "t")
+    veri = _excel({"Sheet1": pd.DataFrame({"x": ["K-1", "K-2"], "y": ["Masa", "Sandalye"]})})
+    assert not importer.oku([("e.xlsx", veri)], db, f).gecerli
+    o = importer.oku([("e.xlsx", veri)], db, f, elle={"e.xlsx|Sheet1|x": "Urun_Kodu", "e.xlsx|Sheet1|y": "Urun_Adi"},
+                     elle_tur={"e.xlsx|Sheet1": "Urunler"})
+    assert o.gecerli and o.yeni_urun == 2
+    # Bağlanacak ürünü olmayan belge satırı tüm aktarımı bozmaz
+    o.sayfalar["Belgeler"] = pd.DataFrame([{"Baglanti": "YOK-1", "Belge_Turu": "GOTS", "_kaynak": "e", "_satir": 9}])
+    s = importer.uygula(db, f, o, "t")
+    assert s.sayac["urun_yeni"] == 2 and len(s.atlanan) == 1

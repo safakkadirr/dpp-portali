@@ -12,7 +12,8 @@ from ui import ortak as o
 
 AKTARMA = "— Aktarma"
 TUR_ADLARI = {"Urunler": "Ürünler", "Malzemeler": "Malzemeler", "Partiler": "Partiler", "Tedarik_Zinciri": "Tedarik zinciri",
-              "Belgeler": "Belgeler", "Tedarikciler": "Tedarikçiler", "Tesisler": "Tesisler"}
+              "Belgeler": "Belgeler", "Tedarikciler": "Tedarikçiler", "Tesisler": "Tesisler",
+              "Testler": "Laboratuvar testleri"}
 
 
 def sayfa():
