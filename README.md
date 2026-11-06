@@ -1,4 +1,4 @@
-# DPP Hazırlık Platformu — Kurumsal Sürüm 3.0
+# DPP Hazırlık Platformu — Kurumsal Sürüm 3.1
 
 AB'ye ihracat yapan **tüm sektörlerdeki** firmalar için Dijital Ürün Pasaportu (DPP) hazırlık, uyum yönetimi ve pasaport yayım platformu.
 
@@ -20,7 +20,7 @@ AB'ye ihracat yapan **tüm sektörlerdeki** firmalar için Dijital Ürün Pasapo
 | Bağımsız doğrulama | Belgelerin doğrulanması / reddi, ürün doğrulama beyanı. Veri sonradan değişirse pasaportta "doğrulamadan sonra güncellendi" notu çıkar |
 | Pasaport | Sürümlü yayım, kritik eksikte yayım engeli, değişmeyen QR adresi, Kamu / Alıcı (B2B) / Otorite görünümleri, geri çekme, JSON-LD, PDF pasaport sayfası |
 | Herkese açık sayfa | QR okutulunca giriş gerektirmeden açılan pasaport sayfası; alıcı erişim koduyla B2B görünümü; içerik bütünlük kontrolü |
-| Tedarikçi portalı | Tedarikçiye hesap açmadan tek kullanımlık bağlantı; SVHC beyanı, malzeme bileşimi, menşe, karbon ve belge toplama; onayla ürüne aktarma |
+| Tedarikçi Portalı | **Eksik analizi:** her tedarikçiden hangi ürün için neyin (SVHC beyanı, bileşim, menşe, süresi dolan / reddedilen belge) istenmesi gerektiğini kendisi çıkarır; seçilen tedarikçilere tek tıkla talep hazırlar. Bir talep birden çok ürünü kapsar. Tedarikçi hesap açmadan Türkçe veya İngilizce ekrandan yanıtlar, süre içinde güncelleyebilir. Okundu bilgisi, hatırlatma (yeni bağlantı), revizyon isteme, ürün bazında kabul ve aktarma. REACH md. 33 dayanaklı hazır e-posta metni; isteğe bağlı SMTP ile program içinden gönderim ve yapay zekâ ile metin düzenleme (bağlantı ve dayanak korunur). Tedarikçi bazında SVHC beyan kaydı: ürün ancak tüm tedarikçileri "Yok" dediğinde "Yok" olur. Firmanın girdiği bileşim tedarikçi yanıtıyla silinmez. Tedarikçi karnesi (yanıt oranı, hızı, açık eksik) |
 | Excel / CSV | **Akıllı sütun eşleme:** şablon zorunlu değil; ham Excel/CSV başlıkları (Model, Stok Kodu, Artikel, SKU, Bileşen, Kumaş İçeriği, Composition, Menşei, HS Code ...) büyük/küçük harf, boşluk ve Türkçe karakter farkı gözetmeden tanınır. Başlık satırı ve sayfa türü otomatik bulunur; eşleme ekrandan düzeltilebilir. Tek hücredeki bileşim ve sertifika listeleri ayrıştırılır. Maliyet/fiyat gibi DPP dışı sütunlar aktarılmaz. Hatalı satırlar yalnızca kendilerini etkiler, atlananlar nedenleriyle raporlanır. Yasal beyanlara (SVHC, menşe) varsayılan atanmaz |
 | Raporlar | Kapaklı, Roma rakamlı bölümlü PDF "DPP Hazırlık ve Ön Kontrol Raporu"; ayrıntılı Excel raporu |
 | Asistan | Yerel mod (veri dışarı gitmez) veya onaylı ve maskeli Gemini modu |
@@ -39,7 +39,8 @@ dpp/                    Çekirdek (Streamlit'ten bağımsız; ileride FastAPI'ye
   repo.py               Veri erişimi (firma ayrımlı)
   evaluation.py         Değerlendirme kayıtları, doğrulama beyanları
   passport.py           Pasaport içeriği, yayım, erişim seviyeleri
-  suppliers.py          Tedarikçi veri talepleri
+  suppliers.py          Tedarikçi Portalı: eksik analizi, talepler, yanıtlar, beyanlar, karne
+  eposta.py             SMTP gönderimi ve talep e-posta metinleri (TR / EN)
   importer.py           Excel / CSV içe ve dışa aktarım
   esleme.py             Akıllı sütun eşleme (eş anlamlılar, başlık satırı ve sayfa türü tespiti)
   reports.py            PDF ve Excel raporlar, QR
@@ -81,6 +82,10 @@ APP_URL = "https://uygulama-adiniz.streamlit.app"
 DATABASE_URL = "postgresql://...neon.tech/...?sslmode=require"
 PLATFORM_UNVANI = "DPP Hazırlık Platformu"
 # GEMINI_API_KEY = "..."   (isteğe bağlı)
+# SMTP_HOST = "mail.firmaniz.com.tr"      (isteğe bağlı: tedarikçi e-postalarını program göndersin)
+# SMTP_PORT = 465
+# SMTP_KULLANICI = "dpp@firmaniz.com.tr"
+# SMTP_PAROLA = "..."
 ```
 
 Kaydedin; uygulama yeniden başlar (ilk açılışta paket kurulumu 2–3 dakika sürebilir).

@@ -19,6 +19,8 @@ def eksikler_sayfasi():
     if not bulgular:
         st.success("Eksik bulunmadı.")
         return
+    st.caption("💡 SVHC beyanı, bileşim, menşe ve belge eksiklerini tedarikçilerinizden **Tedarikçi Portalı** ekranındaki "
+               "*Eksik analizi* ile tek seferde isteyebilirsiniz.")
     a, b, c = st.columns(3)
     sinif = a.multiselect("Sınıf", ["Yasal", "Yaklaşan yükümlülük", "DPP", "İyi uygulama"], default=["Yasal", "Yaklaşan yükümlülük"])
     seviye = b.multiselect("Seviye", ["Kritik", "Yüksek", "Orta", "Bilgi"])

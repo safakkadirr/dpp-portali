@@ -88,14 +88,50 @@ def test_pasaport_surum_ve_erisim(db, firma):
 
 def test_tedarikci_akisi(db, firma):
     denim = repo.urun_kod_ile(db, firma, "TK-1002")
+    onceki = repo.alt_liste(db, "malzemeler", firma, denim["id"])
+    db.yaz("UPDATE malzemeler SET tedarikci_id = NULL WHERE urun_id = ?", (denim["id"],))
+    db.yaz("DELETE FROM tedarik_asamalari WHERE urun_id = ?", (denim["id"],))
     ted = repo.tedarikciler(db, firma)[0]
     tid, token = suppliers.talep_olustur(db, firma, ted["id"], denim["id"], ["svhc", "malzeme"], "", 7, "t")
+    assert suppliers.token_ile(db, token)["urun_kodu"] == "TK-1002"
+    suppliers.acildi(db, token)
     suppliers.yanitla(db, token, {"svhc_beyani": "Yok", "malzemeler": [{"malzeme": "Pamuk", "oran": 100}]}, [], "Ali")
     with pytest.raises(ValueError):
-        suppliers.yanitla(db, token, {}, [], "Ali")
+        suppliers.yanitla(db, token, {}, [], "Ali")          # boş güncelleme kabul edilmez
+    suppliers.yanitla(db, token, {"not": "ek bilgi"}, [], "Ali")   # süre içinde güncelleme
+    t = suppliers.talep(db, firma, tid)
+    assert t["gorunen_durum"] == "Yanıtlandı" and t["yanit_sayisi"] == 2 and t["acilis_sayisi"] == 1
     suppliers.urune_aktar(db, firma, tid, "t")
-    assert repo.urun(db, firma, denim["id"])["svhc_beyani"] == "Yok"
-    assert sum(m["oran"] for m in repo.alt_liste(db, "malzemeler", firma, denim["id"])) == 100
+    assert repo.urun(db, firma, denim["id"])["svhc_beyani"] == "Yok"   # ürünün tek tedarikçisi 'Yok' dedi
+    sonra = repo.alt_liste(db, "malzemeler", firma, denim["id"])
+    # firmanın girdiği bileşim silinmez; tedarikçinin içeriği bileşen satırı olarak eklenir
+    assert len(sonra) == len(onceki) + 1 and any("Pamuk %100" in m["malzeme"] for m in sonra)
+    with pytest.raises(ValueError):
+        suppliers.yanitla(db, token, {"not": "x"}, [], "Ali")       # kapanan talep yanıtlanamaz
+
+
+def test_tedarikci_svhc_sentezi_ve_hatirlatma(db, firma):
+    u = repo.urun_kod_ile(db, firma, "TK-1001")
+    t1, t2 = repo.tedarikciler(db, firma)[:2]
+    db.yaz("DELETE FROM malzemeler WHERE urun_id = ?", (u["id"],))
+    db.yaz("DELETE FROM tedarik_asamalari WHERE urun_id = ?", (u["id"],))
+    repo.urun_kaydet(db, firma, {"svhc_beyani": None}, "t", u["id"])
+    repo.alt_degistir(db, "malzemeler", firma, u["id"], [{"malzeme": "Kumaş", "oran": 90, "tedarikci_id": t1["id"]},
+                                                          {"malzeme": "Düğme", "oran": 10, "tedarikci_id": t2["id"]}], "t")
+    analiz = {a["tedarikci_id"]: a for a in suppliers.eksik_analizi(db, firma)}
+    assert "svhc" in analiz[t1["id"]]["istenenler"] and "svhc" in analiz[t2["id"]]["istenenler"]
+    a, tok_a = suppliers.talep_olustur(db, firma, t1["id"], [u["id"]], ["svhc"], "", 7, "t")
+    suppliers.yanitla(db, tok_a, {"urunler": {str(u["id"]): {"svhc_beyani": "Yok"}}}, [], "A")
+    suppliers.urune_aktar(db, firma, a, "t")
+    assert not repo.urun(db, firma, u["id"])["svhc_beyani"]            # bir tedarikçi eksik: ürün 'Yok' sayılmaz
+    b, tok_b = suppliers.talep_olustur(db, firma, t2["id"], [u["id"]], ["svhc"], "", 7, "t")
+    yeni = suppliers.yeni_baglanti(db, firma, b, 5, "t")
+    assert suppliers.token_ile(db, tok_b) is None and suppliers.token_ile(db, yeni)
+    suppliers.yanitla(db, yeni, {"urunler": {str(u["id"]): {"svhc_beyani": "Yok"}}}, [], "B")
+    suppliers.urune_aktar(db, firma, b, "t")
+    assert repo.urun(db, firma, u["id"])["svhc_beyani"] == "Yok"
+    assert len(suppliers.beyanlar(db, firma, u["id"])) == 2
+    assert any(k["talep"] for k in suppliers.karne(db, firma))
 
 
 def test_disa_ice_aktarim_esdegerligi(db, firma):

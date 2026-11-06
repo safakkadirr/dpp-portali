@@ -11,7 +11,7 @@ from ui import ortak as o
 st.set_page_config(page_title=config.platform_unvani(), page_icon="🌍", layout="wide")
 st.markdown(o.CSS, unsafe_allow_html=True)
 
-from ui import aktarim, belgeler, bilgi, dogrulama, giris, kamu, pano, pasaportlar, raporlar, tedarik, urunler, yonetim  # noqa: E402
+from ui import aktarim, belgeler, bilgi, dogrulama, giris, kamu, pano, pasaportlar, portal, raporlar, tedarik, urunler, yonetim  # noqa: E402
 
 # --- Giriş gerektirmeyen bağlantılar ------------------------------------------
 parametreler = st.query_params
@@ -63,6 +63,7 @@ sayfalar = {
     "Veri": [P(urunler.sayfa, title="Ürünler", icon="📦", url_path="urunler"),
              P(belgeler.sayfa, title="Belge Kasası", icon="📁", url_path="belgeler"),
              P(tedarik.sayfa, title="Tedarik Zinciri", icon="🤝", url_path="tedarik"),
+             P(portal.sayfa, title="Tedarikçi Portalı", icon="🔗", url_path="tedarikci-portali"),
              P(aktarim.sayfa, title="Excel Aktarım", icon="📥", url_path="aktarim")],
     "Uyum": [P(raporlar.eksikler_sayfasi, title="Eksikler ve Çözüm", icon="🔎", url_path="eksikler"),
              P(dogrulama.sayfa, title="Bağımsız Doğrulama", icon="✅", url_path="dogrulama"),

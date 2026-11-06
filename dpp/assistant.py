@@ -112,3 +112,21 @@ def yz_yanit(soru: str, baglam: str, anahtar: str, model: str) -> str:
     istemci = genai.Client(api_key=anahtar)
     cevap = istemci.models.generate_content(model=model, contents=f"{YZ_TALIMAT}\n\nVERİ ÖZETİ:\n{baglam}\n\nSORU: {soru}")
     return cevap.text
+
+
+TALEP_TALIMAT = ("Aşağıdaki tedarikçi bilgi talebi e-postasını daha akıcı, kibar ve kurumsal bir dille yeniden yaz. "
+                 "KURALLAR: Bağlantıyı (URL), tarihleri, ürün kodlarını ve 'REACH' / 'ESPR' ile başlayan hukuki dayanak "
+                 "paragraflarını AYNEN koru. Yeni bir kanun, madde, yaptırım veya tehdit ifadesi EKLEME. Metni ihtarname gibi "
+                 "değil, iş birliği isteyen bir talep olarak yaz. Metnin dilini değiştirme. Yalnızca e-posta gövdesini döndür.")
+
+
+def talep_metni_duzenle(govde: str, anahtar: str, model: str) -> str:
+    """Talep e-postasını yapay zekâ ile düzenler; bağlantı veya dayanak kaybolursa orijinali döner."""
+    import re
+    from google import genai
+    istemci = genai.Client(api_key=anahtar)
+    yeni = (istemci.models.generate_content(model=model, contents=f"{TALEP_TALIMAT}\n\n---\n{govde}").text or "").strip()
+    korunacak = re.findall(r"https?://\S+", govde) + [p for p in govde.split("\n\n") if p.startswith(("REACH", "Under Article", "Talep edilen bilgiler", "The requested information"))]
+    if not yeni or any(k not in yeni for k in korunacak):
+        raise ValueError("Yapay zekâ bağlantıyı veya hukuki dayanak paragrafını değiştirdi; orijinal metin korundu.")
+    return yeni

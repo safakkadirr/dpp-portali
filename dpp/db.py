@@ -264,7 +264,37 @@ CREATE TABLE IF NOT EXISTS tedarikci_talepleri (
     yanit_json TEXT,
     yanit_tarihi TEXT,
     olusturan TEXT,
-    olusturma TEXT
+    olusturma TEXT,
+    urun_idler TEXT,
+    dil TEXT,
+    kaynak TEXT,
+    gonderilen_eposta TEXT,
+    gonderim TEXT,
+    gonderim_tarihi TEXT,
+    ilk_acilis TEXT,
+    son_acilis TEXT,
+    acilis_sayisi INTEGER DEFAULT 0,
+    hatirlatma_sayisi INTEGER DEFAULT 0,
+    son_hatirlatma TEXT,
+    revizyon_notu TEXT,
+    yanit_sayisi INTEGER DEFAULT 0
+);
+
+CREATE TABLE IF NOT EXISTS tedarikci_beyanlari (
+    id {PK},
+    firma_id INTEGER NOT NULL REFERENCES firmalar(id),
+    talep_id INTEGER,
+    tedarikci_id INTEGER NOT NULL REFERENCES tedarikciler(id),
+    urun_id INTEGER NOT NULL REFERENCES urunler(id) ON DELETE CASCADE,
+    svhc_beyani TEXT,
+    svhc_maddeler TEXT,
+    mense TEXT,
+    karbon_kg REAL,
+    karbon_yontemi TEXT,
+    yanitlayan TEXT,
+    tarih TEXT,
+    kabul_eden TEXT,
+    UNIQUE (tedarikci_id, urun_id)
 );
 
 CREATE TABLE IF NOT EXISTS denetim_izi (
@@ -291,7 +321,20 @@ CREATE INDEX IF NOT EXISTS ix_bulgu_deg ON bulgular(degerlendirme_id);
 CREATE INDEX IF NOT EXISTS ix_pas_urun ON pasaportlar(urun_id);
 CREATE INDEX IF NOT EXISTS ix_pas_genel ON pasaportlar(genel_kimlik);
 CREATE INDEX IF NOT EXISTS ix_iz_firma ON denetim_izi(firma_id);
+CREATE INDEX IF NOT EXISTS ix_talep_firma ON tedarikci_talepleri(firma_id);
+CREATE INDEX IF NOT EXISTS ix_beyan_urun ON tedarikci_beyanlari(urun_id)
 """
+
+
+# Sonradan eklenen sütunlar: mevcut kurulumlarda sema_olustur() bunları ekler.
+EK_KOLONLAR = {
+    "tedarikci_talepleri": [
+        ("urun_idler", "TEXT"), ("dil", "TEXT"), ("kaynak", "TEXT"), ("gonderilen_eposta", "TEXT"), ("gonderim", "TEXT"),
+        ("gonderim_tarihi", "TEXT"), ("ilk_acilis", "TEXT"), ("son_acilis", "TEXT"), ("acilis_sayisi", "INTEGER DEFAULT 0"),
+        ("hatirlatma_sayisi", "INTEGER DEFAULT 0"), ("son_hatirlatma", "TEXT"), ("revizyon_notu", "TEXT"),
+        ("yanit_sayisi", "INTEGER DEFAULT 0"),
+    ],
+}
 
 
 def simdi() -> str:
@@ -441,9 +484,22 @@ class Veritabani:
         with self.islem():
             for ifade in [s.strip() for s in ddl.split(";") if s.strip()]:
                 self._calistir(ifade)
+            self._kolonlari_tamamla()
             mevcut = self.deger("SELECT deger FROM ayarlar WHERE anahtar = 'sema_surumu'")
             if mevcut is None:
                 self._calistir("INSERT INTO ayarlar (anahtar, deger) VALUES (?, ?)", ("sema_surumu", str(SEMA_SURUMU)))
+
+    def _kolonlari_tamamla(self):
+        """Eski sürümle oluşturulmuş tablolara sonradan eklenen sütunları ekler (veri kaybı olmadan)."""
+        for tablo, kolonlar in EK_KOLONLAR.items():
+            if self.postgres:
+                for ad, tur in kolonlar:
+                    self._calistir(f"ALTER TABLE {tablo} ADD COLUMN IF NOT EXISTS {ad} {tur}")
+            else:
+                mevcut = {r[1] for r in self._calistir(f"PRAGMA table_info({tablo})").fetchall()}
+                for ad, tur in kolonlar:
+                    if ad not in mevcut:
+                        self._calistir(f"ALTER TABLE {tablo} ADD COLUMN {ad} {tur}")
 
     def ayar_al(self, anahtar: str, varsayilan=None):
         d = self.deger("SELECT deger FROM ayarlar WHERE anahtar = ?", (anahtar,))
