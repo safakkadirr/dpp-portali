@@ -4,7 +4,9 @@ Excel içe / dışa aktarım.
 Şablon sayfaları: Urunler, Malzemeler, Partiler, Tedarik_Zinciri, Belgeler, Tedarikciler, Tesisler.
 Önceki sürümlerin dosyaları (tek sayfa, Malzeme_Bilesimi metni, Cevre_Sertifikasi sütunu) da okunur.
 
-İçe aktarım iki adımlıdır: önizleme (hiçbir şey yazılmaz) → onay (tek işlemde yazılır).
+Şablona uyma zorunluluğu yoktur: ham Excel / CSV dosyalarındaki sütunlar akıllı eşleme ile (dpp/esleme.py)
+tanınır. İçe aktarım iki adımlıdır: önizleme (hiçbir şey yazılmaz) → onay. Onayda hatalı satırlar yalnızca
+kendilerini etkiler; diğer satırlar aktarılır ve atlananlar nedenleriyle raporlanır.
 """
 
 from __future__ import annotations
@@ -12,10 +14,11 @@ from __future__ import annotations
 import io
 import re
 from dataclasses import dataclass, field
+from typing import Optional
 
 import pandas as pd
 
-from . import audit, repo
+from . import audit, esleme, repo
 from .catalog import BELGE, SEKTOR, SEKTOR_ADLARI, belge_turu_tahmin, sektor_oner
 from .db import Veritabani
 from .util import bos_mu, evet_mi, gtin_dogrula, gtin_temizle, malzeme_ayristir, metin, sayi, tarih_metni, tr_norm
@@ -97,74 +100,11 @@ SABLON: dict[str, list[tuple[str, str, str, str]]] = {
     ],
 }
 
-# Sütun adı eşleştirme (normalleştirilmiş ad -> şablon adı)
-ES_AD = {
-    "urun_kodu": "Urun_Kodu", "urunkodu": "Urun_Kodu", "kod": "Urun_Kodu", "stok_kodu": "Urun_Kodu", "sku": "Urun_Kodu", "model_kodu": "Urun_Kodu",
-    "urun_adi": "Urun_Adi", "urunadi": "Urun_Adi", "urun": "Urun_Adi",
-    "sektor": "Sektor", "gtip": "GTIP", "gtip_kodu": "GTIP", "hs_kodu": "GTIP", "hs_code": "GTIP",
-    "gtin": "GTIN", "barkod": "GTIN", "ean": "GTIN", "marka": "Marka", "brand": "Marka",
-    "tuketici_urunu": "Tuketici_Urunu", "uretim_tesisi": "Uretim_Tesisi", "tesis": "Tesis",
-    "ab_sorumlu_operator": "AB_Sorumlu_Operator", "uretim_ulkesi": "Uretim_Ulkesi", "hammadde_mensei": "Hammadde_Mensei",
-    "geri_donusturulmus_icerik_yuzde": "Geri_Donusturulmus_Icerik_Yuzde", "svhc_beyani": "SVHC_Beyani", "svhc": "SVHC_Beyani",
-    "svhc_maddeler": "SVHC_Maddeler", "cevresel_iddia": "Cevresel_Iddia",
-    "karbon_ayak_izi_kgco2e": "Karbon_Ayak_Izi_kgCO2e", "karbon_ayak_izi_kg": "Karbon_Ayak_Izi_kgCO2e", "karbon_ayak_izi": "Karbon_Ayak_Izi_kgCO2e",
-    "karbon_yontemi": "Karbon_Yontemi", "gomulu_emisyon_tco2e_t": "Gomulu_Emisyon_tCO2e_t", "gomulu_emisyon": "Gomulu_Emisyon_tCO2e_t",
-    "eprel_no": "EPREL_No", "imds_id": "IMDS_ID", "batarya_kategorisi": "Batarya_Kategorisi", "batarya_kimyasi": "Batarya_Kimyasi",
-    "batarya_kapasite_kwh": "Batarya_Kapasite_kWh", "bakim_onarim_bilgisi": "Bakim_Onarim_Bilgisi",
-    "omur_sonu_talimati": "Omur_Sonu_Talimati",
-    "malzeme": "Malzeme", "oran_yuzde": "Oran_Yuzde", "oran": "Oran_Yuzde", "mense": "Mense", "geri_donusturulmus": "Geri_Donusturulmus",
-    "tedarikci": "Tedarikci", "parti_no": "Parti_No", "lot": "Parti_No", "lot_no": "Parti_No", "uretim_tarihi": "Uretim_Tarihi", "miktar": "Miktar",
-    "sira": "Sira", "asama_sira": "Sira", "asama": "Asama", "ulke": "Ulke", "belge_no": "Belge_No", "sertifika_no": "Belge_No",
-    "baglanti": "Baglanti", "belge_turu": "Belge_Turu", "sertifika": "Belge_Turu", "duzenleyen": "Duzenleyen",
-    "gecerlilik_baslangic": "Gecerlilik_Baslangic", "gecerlilik_bitis": "Gecerlilik_Bitis", "bitis_tarihi": "Gecerlilik_Bitis",
-    "kapsam": "Kapsam", "unvan": "Unvan", "eposta": "Eposta", "e_posta": "Eposta", "yetkili": "Yetkili", "kimlik_no": "Kimlik_No",
-    "ad": "Ad", "adres": "Adres", "gln": "GLN", "tur": "Tur",
-    # eski sürümler
-    "malzeme_bilesimi": "_Malzeme_Bilesimi", "cevre_sertifikasi": "_Cevre_Sertifikasi",
-    "sertifika_bitis_tarihi": "_Sertifika_Bitis", "ihracatci_unvan": "_Ihracatci", "tesis_id": "_Tesis_ID",
-    "geri_donusturulebilirlik_orani": "_Geri_Donusturulebilirlik",
-}
+# ---------------------------------------------------------------------------
+# Okuma ve akıllı eşleme
+# ---------------------------------------------------------------------------
 
-
-def _anahtar(ad) -> str:
-    return re.sub(r"[^a-z0-9]+", "_", tr_norm(ad)).strip("_")
-
-
-def _standart(df: pd.DataFrame) -> pd.DataFrame:
-    df = df.rename(columns={k: ES_AD.get(_anahtar(k), str(k).strip()) for k in df.columns})
-    df = df.loc[:, ~df.columns.duplicated()]
-    return df.dropna(how="all")
-
-
-def _sayfa_turu(ad: str, df: pd.DataFrame) -> str | None:
-    n = _anahtar(ad)
-    for sayfa in SABLON:
-        if _anahtar(sayfa) == n:
-            return sayfa
-    if "aciklama" in n or "okubeni" in n:
-        return None
-    if "belge" in n or "sertifika" in n:
-        return "Belgeler"
-    if "malzeme" in n or "bilesim" in n:
-        return "Malzemeler"
-    if "parti" in n or "lot" in n:
-        return "Partiler"
-    if "tedarik_zinciri" in n or "asama" in n or "zincir" in n:
-        return "Tedarik_Zinciri"
-    if "tedarikci" in n:
-        return "Tedarikciler"
-    if "tesis" in n:
-        return "Tesisler"
-    k = set(df.columns)
-    if "Urun_Adi" in k and "Urun_Kodu" in k:
-        return "Urunler"
-    if "Belge_Turu" in k:
-        return "Belgeler"
-    if "Malzeme" in k:
-        return "Malzemeler"
-    if "Asama" in k:
-        return "Tedarik_Zinciri"
-    return None
+ILGILI_SAYFALAR = list(SABLON)
 
 
 @dataclass
@@ -172,95 +112,227 @@ class Onizleme:
     sayfalar: dict[str, pd.DataFrame] = field(default_factory=dict)
     hatalar: list[str] = field(default_factory=list)
     uyarilar: list[str] = field(default_factory=list)
+    varsayilanlar: list[str] = field(default_factory=list)
+    esleme_raporu: list[dict] = field(default_factory=list)      # sütun bazında eşleme
+    sayfa_raporu: list[dict] = field(default_factory=list)       # sayfa bazında tür ve satır sayısı
     yeni_urun: int = 0
     guncel_urun: int = 0
+    atlanacak: list[dict] = field(default_factory=list)          # okunamayan / kimliksiz satırlar
 
     @property
     def gecerli(self) -> bool:
         return not self.hatalar and any(not d.empty for d in self.sayfalar.values())
 
 
-def oku(dosyalar: list[tuple[str, bytes]], db: Veritabani, firma_id: int) -> Onizleme:
+def _benzersiz(basliklar: list) -> list[str]:
+    sonuc, sayac = [], {}
+    for i, b in enumerate(basliklar):
+        ad = metin(b) or f"Sütun {i + 1}"
+        if isinstance(b, float) and b.is_integer():
+            ad = str(int(b))
+        sayac[ad] = sayac.get(ad, 0) + 1
+        sonuc.append(ad if sayac[ad] == 1 else f"{ad} ({sayac[ad]})")
+    return sonuc
+
+
+def _ham_sayfalar(ad: str, icerik: bytes) -> tuple[dict[str, pd.DataFrame], list[str]]:
+    """Excel (xlsx/xls) veya CSV dosyasını başlıksız ham tablolar olarak okur. (sayfalar, uyarılar)"""
+    if ad.lower().endswith((".csv", ".txt")):
+        for kodlama in ("utf-8-sig", "cp1254", "latin-1"):
+            try:
+                metin_ = icerik.decode(kodlama)
+            except UnicodeDecodeError:
+                continue
+            ayirac = max([";", ",", "\t", "|"], key=lambda a: metin_.splitlines()[0].count(a) if metin_ else 0)
+            try:
+                return {"CSV": pd.read_csv(io.StringIO(metin_), sep=ayirac, header=None, dtype=object)}, []
+            except pd.errors.ParserError:
+                df = pd.read_csv(io.StringIO(metin_), sep=ayirac, header=None, dtype=object, on_bad_lines="skip", engine="python")
+                return {"CSV": df}, [f"{ad}: sütun sayısı başlıkla uyuşmayan satırlar atlandı (ör. hücre içinde '{ayirac}' "
+                                     "karakteri). Bu satırları tırnak içine alın veya Excel olarak kaydedin."]
+        raise ValueError("CSV dosyasının karakter kodlaması çözülemedi")
+    return pd.read_excel(io.BytesIO(icerik), sheet_name=None, header=None, dtype=object), []
+
+
+def _slug(metin_) -> str:
+    s = re.sub(r"[^A-Z0-9]+", "-", tr_norm(metin_).upper()).strip("-")
+    return s[:40] or "URUN"
+
+
+def oku(dosyalar: list[tuple[str, bytes]], db: Veritabani, firma_id: int,
+        elle: Optional[dict[str, str]] = None, elle_tur: Optional[dict[str, str]] = None) -> Onizleme:
+    """
+    Dosyaları okur, sütunları akıllı eşler, kontrol eder. Veritabanına HİÇBİR ŞEY yazmaz.
+
+    elle      : {"dosya|sayfa|başlık": kanonik_alan | YOK_SAY}  — kullanıcının eşleme düzeltmeleri
+    elle_tur  : {"dosya|sayfa": sayfa_türü | YOK_SAY}           — kullanıcının sayfa türü düzeltmeleri
+    """
+    elle, elle_tur = elle or {}, elle_tur or {}
     o = Onizleme()
-    parcalar: dict[str, list[pd.DataFrame]] = {k: [] for k in SABLON}
+    parcalar: dict[str, list[pd.DataFrame]] = {k: [] for k in ILGILI_SAYFALAR}
+
     for ad, icerik in dosyalar:
         try:
-            sayfalar = pd.read_excel(io.BytesIO(icerik), sheet_name=None, dtype=object)
+            sayfalar, okuma_uyarilari = _ham_sayfalar(ad, icerik)
+            o.uyarilar.extend(okuma_uyarilari)
         except Exception as hata:
-            o.hatalar.append(f"{ad}: dosya okunamadı ({hata})")
+            o.hatalar.append(f"{ad}: dosya okunamadı ({hata}). Dosyanın bozuk veya parola korumalı olmadığını kontrol edin.")
             continue
         for sayfa_adi, ham in sayfalar.items():
-            if ham is None or ham.dropna(how="all").empty:
+            anahtar = f"{ad}|{sayfa_adi}"
+            if ham is None:
                 continue
-            df = _standart(ham)
-            tur = _sayfa_turu(str(sayfa_adi), df)
-            if not tur:
+            ham = ham.dropna(how="all").dropna(axis=1, how="all")   # dizin = Excel satırı - 1
+            if ham.empty or len(ham) < 2:
                 continue
+            konum = esleme.baslik_satiri_bul(ham.reset_index(drop=True))
+            satir = int(ham.index[konum])
+            basliklar = _benzersiz(ham.iloc[konum].tolist())
+            df = ham.iloc[konum + 1:].copy()
+            df.columns = basliklar
+            df = df.dropna(how="all")
+            if df.empty:
+                continue
+            yerel_elle = {k.split("|", 2)[2]: v for k, v in elle.items() if k.startswith(anahtar + "|")}
+            if elle_tur.get(anahtar) == esleme.YOK_SAY:
+                o.sayfa_raporu.append({"anahtar": anahtar, "Dosya": ad, "Sayfa": sayfa_adi, "Tür": None, "Satır": len(df),
+                                       "Başlık satırı": satir + 1, "Not": "Kullanıcı tarafından atlandı"})
+                continue
+            e = esleme.sayfa_turu_bul(str(sayfa_adi), basliklar, elle_tur.get(anahtar), yerel_elle)
+            o.sayfa_raporu.append({"anahtar": anahtar, "Dosya": ad, "Sayfa": sayfa_adi, "Tür": e.tur, "Satır": len(df),
+                                   "Başlık satırı": satir + 1,
+                                   "Not": "" if e.tur else "Tanınan veri sütunu bulunamadı; sayfa atlanacak"})
+            if not e.tur:
+                continue
+            ornek = {b: next((metin(v) for v in df[b].tolist() if not bos_mu(v)), "") for b in basliklar}
+            for b in basliklar:
+                if b in e.eslesme:
+                    k, p, y = e.eslesme[b]
+                    o.esleme_raporu.append({"anahtar": f"{anahtar}|{b}", "Dosya": ad, "Sayfa": sayfa_adi, "Tür": e.tur,
+                                            "Excel sütunu": b, "Örnek değer": ornek[b][:40], "Alan": k,
+                                            "Eşlenen alan": esleme.etiket(e.tur, k), "Güven": p, "Yöntem": y})
+                else:
+                    durum = "DPP dışı (maliyet, fiyat vb.)" if b in e.dpp_disi else "Tanınmadı"
+                    if yerel_elle.get(b) == esleme.YOK_SAY:
+                        durum = "Aktarılmayacak (kullanıcı)"
+                    o.esleme_raporu.append({"anahtar": f"{anahtar}|{b}", "Dosya": ad, "Sayfa": sayfa_adi, "Tür": e.tur,
+                                            "Excel sütunu": b, "Örnek değer": ornek[b][:40], "Alan": None,
+                                            "Eşlenen alan": f"— {durum}", "Güven": 0, "Yöntem": ""})
+            yeniden = {b: k for b, (k, _, _) in e.eslesme.items()}
+            kalan = [b for b in basliklar if b not in yeniden and b not in e.dpp_disi and yerel_elle.get(b) != esleme.YOK_SAY]
+            df = df[list(yeniden) + (kalan if e.tur == "Urunler" else [])].rename(columns=yeniden)
+            if e.tur == "Urunler":
+                df = df.rename(columns={b: f"~{b}" for b in kalan})
             df["_kaynak"] = f"{ad} / {sayfa_adi}"
-            df["_satir"] = range(2, len(df) + 2)
-            parcalar[tur].append(df)
+            df["_satir"] = [int(i) + 1 for i in df.index]
+            if e.tur == "Belgeler" and "Baglanti" not in df.columns:
+                df["Baglanti"] = "*"
+                o.varsayilanlar.append(f"{ad} / {sayfa_adi}: belgelerin bağlı olduğu ürün belirtilmemiş; belgeler tüm firmaya bağlanacak.")
+            parcalar[e.tur].append(df.reset_index(drop=True))
 
     for tur, liste in parcalar.items():
         o.sayfalar[tur] = pd.concat(liste, ignore_index=True) if liste else pd.DataFrame()
 
+    if not any(not d.empty for d in o.sayfalar.values()) and not o.hatalar:
+        o.hatalar.append("Dosyalarda tanınan bir veri sayfası bulunamadı. Ürün kodu / ürün adı gibi bir sütun başlığı olduğundan "
+                         "emin olun veya aşağıdaki eşleme tablosundan sütunları elle eşleyin.")
+        return o
+
+    mevcut_kodlar = {r["urun_kodu"] for r in db.tumu("SELECT urun_kodu FROM urunler WHERE firma_id = ?", (firma_id,))}
     u = o.sayfalar["Urunler"]
     if not u.empty:
-        if "Urun_Kodu" not in u.columns:
-            o.hatalar.append("Ürün sayfasında 'Urun_Kodu' sütunu yok.")
-            return o
+        for k in ("Urun_Kodu", "Urun_Adi", "GTIN"):
+            if k not in u.columns:
+                u[k] = None
         u["Urun_Kodu"] = u["Urun_Kodu"].map(metin)
-        if "Urun_Adi" not in u.columns:
-            u["Urun_Adi"] = None
-        bos_kod = u[u["Urun_Kodu"] == ""]
-        if not bos_kod.empty:
-            o.uyarilar.append(f"{len(bos_kod)} satırda ürün kodu boş; bu satırlar atlanacak.")
+        # Ürün kodu yoksa: önce GTIN, sonra ürün adından türetilmiş kod
+        kodsuz = u["Urun_Kodu"] == ""
+        gtinli = kodsuz & u["GTIN"].map(lambda v: bool(gtin_temizle(v)))
+        u.loc[gtinli, "Urun_Kodu"] = u.loc[gtinli, "GTIN"].map(gtin_temizle)
+        adli = (u["Urun_Kodu"] == "") & ~u["Urun_Adi"].map(bos_mu)
+        u.loc[adli, "Urun_Kodu"] = u.loc[adli, "Urun_Adi"].map(lambda a: "URN-" + _slug(a))
+        if gtinli.sum():
+            o.varsayilanlar.append(f"{int(gtinli.sum())} üründe ürün kodu yoktu; barkod (GTIN) ürün kodu olarak kullanıldı.")
+        if adli.sum():
+            o.varsayilanlar.append(f"{int(adli.sum())} üründe ürün kodu ve barkod yoktu; ürün adından kod üretildi (URN-...). "
+                                   "Sonraki yüklemelerde aynı kod üretileceği için ürünler çoğalmaz.")
+        kimliksiz = u[u["Urun_Kodu"] == ""]
+        for r in kimliksiz.to_dict("records"):
+            o.atlanacak.append({"Kaynak": r["_kaynak"], "Satır": r["_satir"], "Ürün": "—", "Neden": "Ürün kodu, adı veya barkodu yok"})
         u = u[u["Urun_Kodu"] != ""].copy()
         tekrar = u[u["Urun_Kodu"].duplicated()]["Urun_Kodu"].unique().tolist()
         if tekrar:
             o.uyarilar.append(f"{len(tekrar)} ürün kodu birden fazla satırda var (ör. {', '.join(tekrar[:5])}); son satır esas alınacak.")
             u = u.drop_duplicates("Urun_Kodu", keep="last")
-        mevcut = {r["urun_kodu"] for r in db.tumu("SELECT urun_kodu FROM urunler WHERE firma_id = ?", (firma_id,))}
-        adsiz = u[(u["Urun_Adi"].map(bos_mu)) & (~u["Urun_Kodu"].isin(mevcut))]
-        for r in adsiz.itertuples():
-            o.hatalar.append(f"{r._kaynak} satır {r._satir}: yeni ürün '{r.Urun_Kodu}' için Urun_Adi zorunlu.")
+        adsiz = u["Urun_Adi"].map(bos_mu) & ~u["Urun_Kodu"].isin(mevcut_kodlar)
+        if adsiz.sum():
+            u.loc[adsiz, "Urun_Adi"] = u.loc[adsiz, "Urun_Kodu"]
+            o.varsayilanlar.append(f"{int(adsiz.sum())} yeni üründe ürün adı yoktu; ürün kodu ad olarak kullanıldı.")
         if "GTIN" in u.columns:
-            for r in u.itertuples():
-                g = getattr(r, "GTIN")
-                if not bos_mu(g) and not gtin_dogrula(g)[0]:
-                    o.uyarilar.append(f"{r.Urun_Kodu}: {gtin_dogrula(g)[1]} — kaydedilecek, değerlendirmede eksik görünecek.")
-        o.yeni_urun = int((~u["Urun_Kodu"].isin(mevcut)).sum())
-        o.guncel_urun = int(u["Urun_Kodu"].isin(mevcut).sum())
-        if "_Cevre_Sertifikasi" in u.columns:
-            o.uyarilar.append("Eski format algılandı: 'Cevre_Sertifikasi' sütunu belge kasasına aktarılacak (bitiş tarihiyle).")
+            hatali = [f"{r['Urun_Kodu']} ({gtin_dogrula(r['GTIN'])[1]})" for r in u.to_dict("records")
+                      if not bos_mu(r["GTIN"]) and not gtin_dogrula(r["GTIN"])[0]]
+            if hatali:
+                o.uyarilar.append(f"{len(hatali)} üründe barkod hatalı; kaydedilecek, değerlendirmede eksik görünecek "
+                                  f"(ör. {', '.join(hatali[:3])}).")
+        sektor_yok = (~u["Urun_Kodu"].isin(mevcut_kodlar)) & (u["Sektor"].map(bos_mu) if "Sektor" in u.columns else True)
+        if int(pd.Series(sektor_yok).sum()):
+            o.varsayilanlar.append(f"{int(pd.Series(sektor_yok).sum())} yeni üründe sektör belirtilmemiş; GTİP kodundan veya ürün adından "
+                                   "tahmin edilecek (bulunamazsa 'Diğer'). Ürün kartından düzeltebilirsiniz.")
+        if "Tuketici_Urunu" not in u.columns:
+            o.varsayilanlar.append("Tüketici ürünü bilgisi yok; sektöre göre varsayılacak (ör. tekstil: evet, demir-çelik: hayır).")
         if "_Geri_Donusturulebilirlik" in u.columns:
-            o.uyarilar.append("'Geri_Donusturulebilirlik_Orani' geri dönüştürülmüş İÇERİK oranı olmadığı için aktarılmayacak.")
+            o.uyarilar.append("'Geri dönüştürülebilirlik oranı' geri dönüştürülmüş İÇERİK oranı değildir; aktarılmayacak.")
+        bilinmeyen = [c[1:] for c in u.columns if str(c).startswith("~")]
+        if bilinmeyen:
+            o.uyarilar.append(f"Tanınmayan {len(bilinmeyen)} sütun var ({', '.join(bilinmeyen[:6])}). Eşleme tablosundan bir alana "
+                              "atayabilir veya 'tanınmayan sütunları ürün notlarına ekle' seçeneğiyle saklayabilirsiniz.")
+        for kolon, ad_ in (("SVHC_Beyani", "SVHC beyanı"), ("Uretim_Ulkesi", "üretim ülkesi")):
+            if kolon not in u.columns:
+                o.varsayilanlar.append(f"Dosyada {ad_} yok. Bu bir yasal beyan olduğu için varsayılan değer ATANMAZ; "
+                                       "ilgili ürünler değerlendirmede eksik görünecek.")
+        o.yeni_urun = int((~u["Urun_Kodu"].isin(mevcut_kodlar)).sum())
+        o.guncel_urun = int(u["Urun_Kodu"].isin(mevcut_kodlar).sum())
         o.sayfalar["Urunler"] = u
 
     tum_kodlar = set(o.sayfalar["Urunler"]["Urun_Kodu"]) if not o.sayfalar["Urunler"].empty else set()
-    tum_kodlar |= {r["urun_kodu"] for r in db.tumu("SELECT urun_kodu FROM urunler WHERE firma_id = ?", (firma_id,))}
+    tum_kodlar |= mevcut_kodlar
     for tur in ("Malzemeler", "Partiler", "Tedarik_Zinciri"):
         df = o.sayfalar[tur]
         if df.empty:
             continue
         if "Urun_Kodu" not in df.columns:
-            o.hatalar.append(f"{tur} sayfasında 'Urun_Kodu' sütunu yok.")
+            o.uyarilar.append(f"{tur.replace('_', ' ')} sayfasında ürün kodu sütunu bulunamadı; bu sayfa aktarılmayacak. "
+                              "Eşleme tablosundan ürün kodu sütununu seçin.")
+            o.sayfalar[tur] = pd.DataFrame()
             continue
         df["Urun_Kodu"] = df["Urun_Kodu"].map(metin)
         bilinmeyen = sorted(set(df["Urun_Kodu"]) - tum_kodlar - {""})
         if bilinmeyen:
-            o.uyarilar.append(f"{tur}: {len(bilinmeyen)} satırdaki ürün kodu bulunamadı ve atlanacak (ör. {', '.join(bilinmeyen[:5])}).")
+            o.uyarilar.append(f"{tur.replace('_', ' ')}: {len(bilinmeyen)} ürün kodu sistemde ve dosyada yok; bu satırlar atlanacak "
+                              f"(ör. {', '.join(bilinmeyen[:5])}).")
     m = o.sayfalar["Malzemeler"]
     if not m.empty and "Oran_Yuzde" in m.columns:
         toplam = m.assign(_o=m["Oran_Yuzde"].map(lambda v: sayi(v) or 0)).groupby("Urun_Kodu")["_o"].sum()
+        # 0-1 arası oranlar (0,95 gibi) yüzdeye çevrilir
+        kesirli = toplam[(toplam > 0.9) & (toplam <= 1.01)].index.tolist()
+        if kesirli:
+            o.varsayilanlar.append(f"{len(kesirli)} üründe oranlar 0-1 arasında girilmiş (ör. 0,95); yüzdeye çevrilecek.")
+            o.sayfalar["Malzemeler"].attrs["kesirli"] = set(kesirli)
+            toplam.loc[kesirli] = toplam.loc[kesirli] * 100
         yanlis = toplam[(toplam - 100).abs() > 1]
         if len(yanlis):
-            o.uyarilar.append(f"{len(yanlis)} ürünün malzeme toplamı %100 değil (ör. {', '.join(f'{k}: %{v:g}' for k, v in yanlis.head(3).items())}).")
+            o.uyarilar.append(f"{len(yanlis)} ürünün malzeme toplamı %100 değil (ör. "
+                              f"{', '.join(f'{k}: %{v:g}' for k, v in yanlis.head(3).items())}); aktarılacak, değerlendirmede görünecek.")
+    if not o.sayfalar["Urunler"].empty and "_Malzeme_Bilesimi" in o.sayfalar["Urunler"].columns:
+        okunamayan = [r["Urun_Kodu"] for r in o.sayfalar["Urunler"].to_dict("records")
+                      if not bos_mu(r["_Malzeme_Bilesimi"]) and not malzeme_ayristir(r["_Malzeme_Bilesimi"])]
+        if okunamayan:
+            o.uyarilar.append(f"{len(okunamayan)} üründe bileşim metni çözümlenemedi (ör. {', '.join(okunamayan[:3])}).")
     b = o.sayfalar["Belgeler"]
     if not b.empty and "Belge_Turu" in b.columns:
-        tahmin = b["Belge_Turu"].map(belge_turu_tahmin)
-        diger = b[tahmin == "DIGER"]["Belge_Turu"].dropna().astype(str).unique().tolist()
+        diger = b[b["Belge_Turu"].map(belge_turu_tahmin) == "DIGER"]["Belge_Turu"].dropna().astype(str).unique().tolist()
         if diger:
-            o.uyarilar.append(f"Türü tanınamayan belgeler 'Diğer' olarak kaydedilecek: {', '.join(diger[:5])}")
+            o.uyarilar.append(f"Türü tanınamayan belgeler 'Diğer belge' olarak kaydedilecek: {', '.join(diger[:5])}")
     return o
 
 
@@ -269,152 +341,260 @@ def _s(r: dict, k: str):
     return None if bos_mu(v) else v
 
 
-def uygula(db: Veritabani, firma_id: int, o: Onizleme, kullanici: str) -> dict:
-    """Önizlenen veriyi tek işlemde veritabanına yazar."""
+@dataclass
+class AktarimSonucu:
+    sayac: dict
+    atlanan: list[dict]
+    notlar: list[str]
+
+    def ozet(self) -> str:
+        adlar = {"urun_yeni": "yeni ürün", "urun_guncel": "güncellenen ürün", "malzeme": "malzeme satırı", "parti": "parti",
+                 "asama": "tedarik aşaması", "belge": "belge", "tedarikci": "tedarikçi", "tesis": "tesis"}
+        return ", ".join(f"{v} {adlar.get(k, k)}" for k, v in self.sayac.items() if v) or "aktarılan kayıt yok"
+
+
+_SAYI_ALANLARI = {"Geri_Donusturulmus_Icerik_Yuzde": "geri_donusturulmus_yuzde", "Karbon_Ayak_Izi_kgCO2e": "karbon_kg",
+                  "Gomulu_Emisyon_tCO2e_t": "gomulu_emisyon", "Batarya_Kapasite_kWh": "batarya_kwh"}
+_SVHC = {"yok": "Yok", "hayir": "Yok", "no": "Yok", "none": "Yok", "icermez": "Yok", "var": "Var", "evet": "Var", "yes": "Var",
+         "icerir": "Var", "bilinmiyor": "Bilinmiyor", "belirsiz": "Bilinmiyor", "unknown": "Bilinmiyor"}
+
+
+def _sertifikalari_bol(deger) -> list[str]:
+    return [p.strip() for p in re.split(r"[;,/+\n]| ve | and ", metin(deger)) if p.strip()]
+
+
+def uygula(db: Veritabani, firma_id: int, o: Onizleme, kullanici: str, bilinmeyenleri_nota: bool = False) -> AktarimSonucu:
+    """
+    Önizlenen veriyi yazar. Tek işlem içinde satır bazında kurtarma noktası kullanılır: hatalı bir satır
+    yalnızca kendisini etkiler, diğer satırlar aktarılır ve hatalar özetlenir.
+    """
     sayac = {"urun_yeni": 0, "urun_guncel": 0, "malzeme": 0, "parti": 0, "asama": 0, "belge": 0, "tedarikci": 0, "tesis": 0}
+    atlanan = list(o.atlanacak)
+    notlar: list[str] = []
+    gecersiz_sayi = 0
+    kesirli = o.sayfalar.get("Malzemeler", pd.DataFrame()).attrs.get("kesirli", set())
+
+    def dene(kaynak, satir, urun, is_):
+        try:
+            with db.kurtarma_noktasi():
+                is_()
+            return True
+        except Exception as hata:
+            atlanan.append({"Kaynak": kaynak, "Satır": satir, "Ürün": urun, "Neden": str(hata)[:200]})
+            return False
+
     with db.islem():
         for r in o.sayfalar.get("Tesisler", pd.DataFrame()).to_dict("records"):
             if _s(r, "Ad"):
-                tid = repo.tesis_bul_veya_ekle(db, firma_id, r["Ad"])
-                db.guncelle("tesisler", tid, {k2: metin(_s(r, k1)) or None for k1, k2 in
-                                               (("Adres", "adres"), ("Ulke", "ulke"), ("GLN", "gln"), ("Tur", "tur")) if _s(r, k1)}, firma_id)
-                sayac["tesis"] += 1
+                def is_(r=r):
+                    tid = repo.tesis_bul_veya_ekle(db, firma_id, r["Ad"])
+                    db.guncelle("tesisler", tid, {k2: metin(_s(r, k1)) for k1, k2 in (("Adres", "adres"), ("Ulke", "ulke"),
+                                                                                       ("GLN", "gln"), ("Tur", "tur")) if _s(r, k1)}, firma_id)
+                if dene(r.get("_kaynak"), r.get("_satir"), r["Ad"], is_):
+                    sayac["tesis"] += 1
         for r in o.sayfalar.get("Tedarikciler", pd.DataFrame()).to_dict("records"):
             if _s(r, "Unvan"):
-                tid = repo.tedarikci_bul_veya_ekle(db, firma_id, r["Unvan"])
-                db.guncelle("tedarikciler", tid, {k2: metin(_s(r, k1)) or None for k1, k2 in
-                                                   (("Ulke", "ulke"), ("Eposta", "eposta"), ("Yetkili", "yetkili"),
-                                                    ("Kimlik_No", "kimlik_no")) if _s(r, k1)}, firma_id)
-                sayac["tedarikci"] += 1
+                def is_(r=r):
+                    tid = repo.tedarikci_bul_veya_ekle(db, firma_id, r["Unvan"])
+                    db.guncelle("tedarikciler", tid, {k2: metin(_s(r, k1)) for k1, k2 in
+                                                      (("Ulke", "ulke"), ("Eposta", "eposta"), ("Yetkili", "yetkili"),
+                                                       ("Kimlik_No", "kimlik_no")) if _s(r, k1)}, firma_id)
+                if dene(r.get("_kaynak"), r.get("_satir"), r["Unvan"], is_):
+                    sayac["tedarikci"] += 1
 
-        urun_id: dict[str, int] = {r["urun_kodu"]: r["id"] for r in db.tumu("SELECT id, urun_kodu FROM urunler WHERE firma_id = ?", (firma_id,))}
-        eski_malzeme: dict[str, list] = {}
-        eski_belge: list[dict] = []
+        urun_id: dict[str, int] = {r["urun_kodu"]: r["id"] for r in
+                                   db.tumu("SELECT id, urun_kodu FROM urunler WHERE firma_id = ?", (firma_id,))}
+        tek_hucre_malzeme: dict[str, list] = {}
+        urun_belgeleri: list[dict] = []
+        urun_tedarikci: dict[str, tuple] = {}
+        ek_partiler: list[dict] = []
+
         for r in o.sayfalar.get("Urunler", pd.DataFrame()).to_dict("records"):
             kod = metin(r["Urun_Kodu"])
-            sektor = _s(r, "Sektor")
-            veri = {
-                "urun_kodu": kod, "ad": metin(_s(r, "Urun_Adi")) or None,
-                "gtip": metin(_s(r, "GTIP")) or None, "gtin": gtin_temizle(_s(r, "GTIN")) or None,
-                "marka": metin(_s(r, "Marka")) or None,
-                "ab_sorumlu_operator": _s(r, "AB_Sorumlu_Operator"), "uretim_ulkesi": _s(r, "Uretim_Ulkesi"),
-                "hammadde_mensei": _s(r, "Hammadde_Mensei"),
-                "geri_donusturulmus_yuzde": sayi(_s(r, "Geri_Donusturulmus_Icerik_Yuzde")),
-                "svhc_beyani": _s(r, "SVHC_Beyani"), "svhc_maddeler": _s(r, "SVHC_Maddeler"),
-                "cevresel_iddia": _s(r, "Cevresel_Iddia"), "karbon_kg": sayi(_s(r, "Karbon_Ayak_Izi_kgCO2e")),
-                "karbon_yontemi": _s(r, "Karbon_Yontemi"), "gomulu_emisyon": sayi(_s(r, "Gomulu_Emisyon_tCO2e_t")),
-                "eprel_no": metin(_s(r, "EPREL_No")) or None, "imds_id": metin(_s(r, "IMDS_ID")) or None,
-                "batarya_kategori": _s(r, "Batarya_Kategorisi"), "batarya_kimya": _s(r, "Batarya_Kimyasi"),
-                "batarya_kwh": sayi(_s(r, "Batarya_Kapasite_kWh")),
-                "bakim_onarim": _s(r, "Bakim_Onarim_Bilgisi"), "omur_sonu": _s(r, "Omur_Sonu_Talimati"),
-            }
-            if "Tuketici_Urunu" in r:
-                e = evet_mi(r.get("Tuketici_Urunu"))
-                veri["tuketici_urunu"] = None if e is None else int(e)
-            if _s(r, "Uretim_Tesisi"):
-                veri["tesis_id"] = repo.tesis_bul_veya_ekle(db, firma_id, r["Uretim_Tesisi"])
-            if sektor or kod not in urun_id:
-                veri["sektor_kodu"] = sektor_oner(None, sektor) if sektor else sektor_oner(_s(r, "GTIP"), _s(r, "Urun_Adi"))
-                if sektor and veri["sektor_kodu"] == "diger" and _s(r, "GTIP"):
-                    veri["sektor_kodu"] = sektor_oner(_s(r, "GTIP"), sektor)
-            # Dosyada olmayan sütunlar mevcut veriyi silmesin
-            veri = {k: v for k, v in veri.items() if k in ("urun_kodu", "sektor_kodu", "tesis_id", "tuketici_urunu") or v is not None}
-            if kod in urun_id:
-                repo.urun_kaydet(db, firma_id, veri, kullanici, urun_id[kod])
-                sayac["urun_guncel"] += 1
-            else:
-                urun_id[kod] = repo.urun_kaydet(db, firma_id, veri, kullanici)
-                sayac["urun_yeni"] += 1
-            if _s(r, "_Malzeme_Bilesimi"):
-                eski_malzeme[kod] = [{"malzeme": a, "oran": o_} for a, o_ in malzeme_ayristir(r["_Malzeme_Bilesimi"])]
-            if _s(r, "_Cevre_Sertifikasi"):
-                eski_belge.append({"Baglanti": kod, "Belge_Turu": r["_Cevre_Sertifikasi"], "Gecerlilik_Bitis": r.get("_Sertifika_Bitis")})
-            if _s(r, "Parti_No"):
-                o.sayfalar.setdefault("Partiler", pd.DataFrame())
-                o.sayfalar["Partiler"] = pd.concat([o.sayfalar["Partiler"], pd.DataFrame([{"Urun_Kodu": kod, "Parti_No": r["Parti_No"],
-                                                    "Uretim_Tarihi": r.get("Uretim_Tarihi")}])], ignore_index=True)
 
-        def grupla(tur):
+            def is_(r=r, kod=kod):
+                nonlocal gecersiz_sayi
+                sektor = _s(r, "Sektor")
+                veri = {"urun_kodu": kod, "ad": metin(_s(r, "Urun_Adi")) or None, "gtip": metin(_s(r, "GTIP")) or None,
+                        "gtin": gtin_temizle(_s(r, "GTIN")) or None, "marka": metin(_s(r, "Marka")) or None,
+                        "ab_sorumlu_operator": _s(r, "AB_Sorumlu_Operator"), "uretim_ulkesi": _s(r, "Uretim_Ulkesi"),
+                        "hammadde_mensei": _s(r, "Hammadde_Mensei"), "svhc_maddeler": _s(r, "SVHC_Maddeler"),
+                        "cevresel_iddia": _s(r, "Cevresel_Iddia"), "karbon_yontemi": _s(r, "Karbon_Yontemi"),
+                        "eprel_no": metin(_s(r, "EPREL_No")) or None, "imds_id": metin(_s(r, "IMDS_ID")) or None,
+                        "batarya_kategori": _s(r, "Batarya_Kategorisi"), "batarya_kimya": _s(r, "Batarya_Kimyasi"),
+                        "bakim_onarim": _s(r, "Bakim_Onarim_Bilgisi"), "omur_sonu": _s(r, "Omur_Sonu_Talimati")}
+                for kaynak_k, hedef_k in _SAYI_ALANLARI.items():
+                    ham = _s(r, kaynak_k)
+                    veri[hedef_k] = sayi(ham)
+                    if ham is not None and veri[hedef_k] is None:
+                        gecersiz_sayi += 1
+                if _s(r, "SVHC_Beyani"):
+                    veri["svhc_beyani"] = _SVHC.get(tr_norm(r["SVHC_Beyani"]), metin(r["SVHC_Beyani"]))
+                if "Tuketici_Urunu" in r:
+                    e = evet_mi(r.get("Tuketici_Urunu"))
+                    veri["tuketici_urunu"] = None if e is None else int(e)
+                if _s(r, "Uretim_Tesisi"):
+                    veri["tesis_id"] = repo.tesis_bul_veya_ekle(db, firma_id, r["Uretim_Tesisi"])
+                if sektor or kod not in urun_id:
+                    veri["sektor_kodu"] = sektor_oner(_s(r, "GTIP"), sektor) if sektor else sektor_oner(_s(r, "GTIP"), _s(r, "Urun_Adi"))
+                if bilinmeyenleri_nota:
+                    ek = "; ".join(f"{k[1:]}: {metin(v)}" for k, v in r.items() if str(k).startswith("~") and not bos_mu(v))
+                    if ek:
+                        eski_not = metin((repo.urun_kod_ile(db, firma_id, kod) or {}).get("notlar"))
+                        eski_not = re.sub(r"\s*\[Excel ek bilgi:.*?\]", "", eski_not).strip()
+                        veri["notlar"] = (eski_not + " " if eski_not else "") + f"[Excel ek bilgi: {ek}]"
+                veri = {k: v for k, v in veri.items() if k in ("urun_kodu", "sektor_kodu") or v is not None}
+                if kod in urun_id:
+                    repo.urun_kaydet(db, firma_id, veri, kullanici, urun_id[kod])
+                    sayac["urun_guncel"] += 1
+                else:
+                    urun_id[kod] = repo.urun_kaydet(db, firma_id, veri, kullanici)
+                    sayac["urun_yeni"] += 1
+
+            if not dene(r.get("_kaynak"), r.get("_satir"), kod, is_):
+                continue
+            if _s(r, "_Malzeme_Bilesimi"):
+                tek_hucre_malzeme[kod] = [{"malzeme": a, "oran": o_} for a, o_ in malzeme_ayristir(r["_Malzeme_Bilesimi"])]
+            if _s(r, "_Cevre_Sertifikasi"):
+                turler = _sertifikalari_bol(r["_Cevre_Sertifikasi"])
+                for t in turler:
+                    urun_belgeleri.append({"Baglanti": kod, "Belge_Turu": t, "_kaynak": r.get("_kaynak"), "_satir": r.get("_satir"),
+                                           "Belge_No": r.get("_Sertifika_No") if len(turler) == 1 else None,
+                                           "Gecerlilik_Bitis": r.get("_Sertifika_Bitis")})
+            if _s(r, "_Tedarikci"):
+                urun_tedarikci[kod] = (r["_Tedarikci"], _s(r, "_Tedarikci_Ulke") or _s(r, "Hammadde_Mensei"))
+            if _s(r, "Parti_No"):
+                ek_partiler.append({"Urun_Kodu": kod, "Parti_No": r["Parti_No"], "Uretim_Tarihi": r.get("Uretim_Tarihi"),
+                                    "_kaynak": r.get("_kaynak"), "_satir": r.get("_satir")})
+
+        def grupla(tur, ek=()):
             df = o.sayfalar.get(tur, pd.DataFrame())
-            if df.empty or "Urun_Kodu" not in df.columns:
-                return {}
-            return {k: g.to_dict("records") for k, g in df.groupby(df["Urun_Kodu"].map(metin))}
+            satirlar = (df.to_dict("records") if not df.empty and "Urun_Kodu" in df.columns else []) + list(ek)
+            gruplar: dict[str, list] = {}
+            for s in satirlar:
+                gruplar.setdefault(metin(s.get("Urun_Kodu")), []).append(s)
+            return gruplar
 
         malzeme_gruplari = grupla("Malzemeler")
-        for kod, liste in eski_malzeme.items():
+        for kod, liste in tek_hucre_malzeme.items():
             malzeme_gruplari.setdefault(kod, liste)
         for kod, satirlar in malzeme_gruplari.items():
             if kod not in urun_id:
                 continue
-            temiz = []
-            for s in satirlar:
-                if "malzeme" in s:  # eski format
-                    temiz.append(s)
-                    continue
-                temiz.append({"malzeme": _s(s, "Malzeme"), "oran": sayi(_s(s, "Oran_Yuzde")), "mense": _s(s, "Mense"),
-                              "geri_donusturulmus": 1 if evet_mi(s.get("Geri_Donusturulmus")) else 0,
-                              "tedarikci_id": repo.tedarikci_bul_veya_ekle(db, firma_id, _s(s, "Tedarikci")) if _s(s, "Tedarikci") else None})
-            sayac["malzeme"] += repo.alt_degistir(db, "malzemeler", firma_id, urun_id[kod], temiz, kullanici, denetle=False)
 
-        for kod, satirlar in grupla("Partiler").items():
+            def is_(kod=kod, satirlar=satirlar):
+                temiz = []
+                for s in satirlar:
+                    if "malzeme" in s:
+                        temiz.append(s)
+                        continue
+                    oran = sayi(_s(s, "Oran_Yuzde"))
+                    if oran is not None and kod in kesirli:
+                        oran = round(oran * 100, 4)
+                    temiz.append({"malzeme": _s(s, "Malzeme"), "oran": oran, "mense": _s(s, "Mense"),
+                                  "geri_donusturulmus": 1 if evet_mi(s.get("Geri_Donusturulmus")) else 0,
+                                  "tedarikci_id": repo.tedarikci_bul_veya_ekle(db, firma_id, _s(s, "Tedarikci")) if _s(s, "Tedarikci") else None})
+                sayac["malzeme"] += repo.alt_degistir(db, "malzemeler", firma_id, urun_id[kod], temiz, kullanici, denetle=False)
+            dene("Malzemeler", "—", kod, is_)
+
+        for kod, satirlar in grupla("Partiler", ek_partiler).items():
             if kod not in urun_id:
                 continue
-            mevcut = {p["parti_no"]: p for p in repo.alt_liste(db, "partiler", firma_id, urun_id[kod])}
-            for s in satirlar:
-                no = metin(_s(s, "Parti_No"))
-                if not no:
-                    continue
-                mevcut[no] = {"parti_no": no, "uretim_tarihi": tarih_metni(_s(s, "Uretim_Tarihi")) or mevcut.get(no, {}).get("uretim_tarihi"),
-                              "miktar": sayi(_s(s, "Miktar")),
-                              "tesis_id": repo.tesis_bul_veya_ekle(db, firma_id, _s(s, "Tesis")) if _s(s, "Tesis") else mevcut.get(no, {}).get("tesis_id")}
-            sayac["parti"] += repo.alt_degistir(db, "partiler", firma_id, urun_id[kod], list(mevcut.values()), kullanici, denetle=False)
 
-        for kod, satirlar in grupla("Tedarik_Zinciri").items():
+            def is_(kod=kod, satirlar=satirlar):
+                mevcut = {p["parti_no"]: p for p in repo.alt_liste(db, "partiler", firma_id, urun_id[kod])}
+                for s in satirlar:
+                    no = metin(_s(s, "Parti_No"))
+                    if not no:
+                        continue
+                    onceki = mevcut.get(no, {})
+                    mevcut[no] = {"parti_no": no, "uretim_tarihi": tarih_metni(_s(s, "Uretim_Tarihi")) or onceki.get("uretim_tarihi"),
+                                  "miktar": sayi(_s(s, "Miktar")) if _s(s, "Miktar") is not None else onceki.get("miktar"),
+                                  "tesis_id": repo.tesis_bul_veya_ekle(db, firma_id, _s(s, "Tesis")) if _s(s, "Tesis") else onceki.get("tesis_id")}
+                sayac["parti"] += repo.alt_degistir(db, "partiler", firma_id, urun_id[kod], list(mevcut.values()), kullanici, denetle=False)
+            dene("Partiler", "—", kod, is_)
+
+        asama_gruplari = grupla("Tedarik_Zinciri")
+        for kod, satirlar in asama_gruplari.items():
             if kod not in urun_id:
                 continue
-            temiz = [{"sira": int(sayi(_s(s, "Sira")) or i + 1), "asama": _s(s, "Asama"), "ulke": _s(s, "Ulke"),
-                      "belge_no": metin(_s(s, "Belge_No")) or None,
-                      "tedarikci_id": repo.tedarikci_bul_veya_ekle(db, firma_id, _s(s, "Tedarikci")) if _s(s, "Tedarikci") else None}
-                     for i, s in enumerate(satirlar)]
-            sayac["asama"] += repo.alt_degistir(db, "tedarik_asamalari", firma_id, urun_id[kod], temiz, kullanici, denetle=False)
 
-        belgeler = o.sayfalar.get("Belgeler", pd.DataFrame()).to_dict("records") + eski_belge
+            def is_(kod=kod, satirlar=satirlar):
+                temiz = [{"sira": int(sayi(_s(s, "Sira")) or i + 1), "asama": _s(s, "Asama"), "ulke": _s(s, "Ulke"),
+                          "belge_no": metin(_s(s, "Belge_No")) or None,
+                          "tedarikci_id": repo.tedarikci_bul_veya_ekle(db, firma_id, _s(s, "Tedarikci")) if _s(s, "Tedarikci") else None}
+                         for i, s in enumerate(satirlar)]
+                sayac["asama"] += repo.alt_degistir(db, "tedarik_asamalari", firma_id, urun_id[kod], temiz, kullanici, denetle=False)
+            dene("Tedarik zinciri", "—", kod, is_)
+
+        for kod, (unvan, ulke) in urun_tedarikci.items():
+            if kod not in urun_id or kod in asama_gruplari or repo.alt_liste(db, "tedarik_asamalari", firma_id, urun_id[kod]):
+                continue
+
+            def is_(kod=kod, unvan=unvan, ulke=ulke):
+                tid = repo.tedarikci_bul_veya_ekle(db, firma_id, unvan, {"ulke": ulke})
+                repo.alt_degistir(db, "tedarik_asamalari", firma_id, urun_id[kod],
+                                  [{"sira": 1, "asama": "Ana tedarikçi", "tedarikci_id": tid, "ulke": ulke}], kullanici, denetle=False)
+                sayac["asama"] += 1
+            dene("Ürünler", "—", kod, is_)
+        if urun_tedarikci:
+            notlar.append("Ürün satırındaki tedarikçi bilgisi, tedarik zinciri girilmemiş ürünlerde 'Ana tedarikçi' aşaması olarak eklendi.")
+
+        belgeler = o.sayfalar.get("Belgeler", pd.DataFrame()).to_dict("records") + urun_belgeleri
         for r in belgeler:
             tur_ham = _s(r, "Belge_Turu")
             if not tur_ham:
                 continue
-            baglanti_metni = metin(_s(r, "Baglanti") or _s(r, "Urun_Kodu")) or "*"
-            baglar = []
-            for parca in [p.strip() for p in baglanti_metni.split(";") if p.strip()]:
-                if parca == "*":
-                    baglar.append(("firma", None))
-                elif tr_norm(parca).startswith("tesis:"):
-                    baglar.append(("tesis", repo.tesis_bul_veya_ekle(db, firma_id, parca.split(":", 1)[1])))
-                elif tr_norm(parca).startswith("tedarikci:"):
-                    baglar.append(("tedarikci", repo.tedarikci_bul_veya_ekle(db, firma_id, parca.split(":", 1)[1])))
-                elif parca in urun_id:
-                    baglar.append(("urun", urun_id[parca]))
-            if not baglar:
-                continue
-            kod = belge_turu_tahmin(tur_ham)
-            veri = {"tur_kodu": kod, "tur_serbest": metin(tur_ham), "belge_no": metin(_s(r, "Belge_No")) or None,
-                    "duzenleyen": _s(r, "Duzenleyen"), "baslangic": tarih_metni(_s(r, "Gecerlilik_Baslangic")),
-                    "bitis": tarih_metni(_s(r, "Gecerlilik_Bitis")), "kapsam": _s(r, "Kapsam")}
-            ayni = None
-            if veri["belge_no"]:
-                ayni = db.bir("SELECT id FROM belgeler WHERE firma_id = ? AND tur_kodu = ? AND belge_no = ?",
-                              (firma_id, kod, veri["belge_no"]))
-            if ayni:
-                db.guncelle("belgeler", ayni["id"], {k: v for k, v in veri.items() if v is not None}, firma_id)
-                mevcut_bag = [(x["hedef_tur"], x["hedef_id"]) for x in
-                              db.tumu("SELECT hedef_tur, hedef_id FROM belge_baglantilari WHERE belge_id = ?", (ayni["id"],))]
-                repo.belge_baglantilari_ayarla(db, firma_id, ayni["id"], mevcut_bag + baglar)
-            else:
-                repo.belge_ekle(db, firma_id, veri, baglar, kullanici, kaynak="Excel içe aktarım")
-            sayac["belge"] += 1
+
+            def is_(r=r, tur_ham=tur_ham):
+                baglanti_metni = metin(_s(r, "Baglanti") or _s(r, "Urun_Kodu")) or "*"
+                baglar = []
+                for parca in [p.strip() for p in re.split(r"[;\n]", baglanti_metni) if p.strip()]:
+                    n = tr_norm(parca)
+                    if parca == "*" or n in ("tumu", "hepsi", "firma", "tum urunler"):
+                        baglar.append(("firma", None))
+                    elif n.startswith("tesis:"):
+                        baglar.append(("tesis", repo.tesis_bul_veya_ekle(db, firma_id, parca.split(":", 1)[1])))
+                    elif n.startswith("tedarikci:"):
+                        baglar.append(("tedarikci", repo.tedarikci_bul_veya_ekle(db, firma_id, parca.split(":", 1)[1])))
+                    elif parca in urun_id:
+                        baglar.append(("urun", urun_id[parca]))
+                if not baglar:
+                    raise ValueError(f"Belgenin bağlanacağı ürün bulunamadı: '{baglanti_metni}'")
+                kod_ = belge_turu_tahmin(tur_ham)
+                veri = {"tur_kodu": kod_, "tur_serbest": metin(tur_ham), "belge_no": metin(_s(r, "Belge_No")) or None,
+                        "duzenleyen": _s(r, "Duzenleyen"), "baslangic": tarih_metni(_s(r, "Gecerlilik_Baslangic")),
+                        "bitis": tarih_metni(_s(r, "Gecerlilik_Bitis")), "kapsam": _s(r, "Kapsam")}
+                if _s(r, "Gecerlilik_Bitis") and not veri["bitis"]:
+                    notlar.append(f"'{tur_ham}' belgesinin bitiş tarihi okunamadı ('{metin(r.get('Gecerlilik_Bitis'))}'); boş bırakıldı.")
+                ayni = None
+                if veri["belge_no"]:
+                    ayni = db.bir("SELECT id FROM belgeler WHERE firma_id = ? AND tur_kodu = ? AND belge_no = ?", (firma_id, kod_, veri["belge_no"]))
+                else:
+                    # numarasız belgede aynı tür + aynı bağlantı tekrar yüklenirse çoğaltma
+                    for bag_tur, bag_id in baglar:
+                        ayni = db.bir("SELECT b.id FROM belgeler b JOIN belge_baglantilari bb ON bb.belge_id = b.id "
+                                      "WHERE b.firma_id = ? AND b.tur_kodu = ? AND b.belge_no IS NULL AND bb.hedef_tur = ? AND "
+                                      + ("bb.hedef_id IS NULL" if bag_id is None else "bb.hedef_id = ?"),
+                                      (firma_id, kod_, bag_tur) + (() if bag_id is None else (bag_id,)))
+                        if ayni:
+                            break
+                if ayni:
+                    db.guncelle("belgeler", ayni["id"], {k: v for k, v in veri.items() if v is not None}, firma_id)
+                    mevcut_bag = [(x["hedef_tur"], x["hedef_id"]) for x in
+                                  db.tumu("SELECT hedef_tur, hedef_id FROM belge_baglantilari WHERE belge_id = ?", (ayni["id"],))]
+                    repo.belge_baglantilari_ayarla(db, firma_id, ayni["id"], mevcut_bag + baglar)
+                else:
+                    repo.belge_ekle(db, firma_id, veri, baglar, kullanici, kaynak="Excel içe aktarım")
+                sayac["belge"] += 1
+            dene(r.get("_kaynak", "Belgeler"), r.get("_satir", "—"), metin(_s(r, "Baglanti")) or "—", is_)
+
+        if gecersiz_sayi:
+            notlar.append(f"{gecersiz_sayi} hücrede sayı beklenirken metin vardı (ör. 'yaklaşık 4'); bu hücreler boş bırakıldı.")
         audit.kaydet(db, firma_id, kullanici, "Excel içe aktarım", "firma", firma_id,
-                     ", ".join(f"{k}: {v}" for k, v in sayac.items() if v))
-    return sayac
+                     ", ".join(f"{k}: {v}" for k, v in sayac.items() if v) + (f"; atlanan {len(atlanan)}" if atlanan else ""))
+    return AktarimSonucu(sayac, atlanan, list(dict.fromkeys(notlar)))
+
 
 
 # ---------------------------------------------------------------------------

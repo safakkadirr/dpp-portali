@@ -359,6 +359,21 @@ class Veritabani:
             finally:
                 self._ic_islem -= 1
 
+    @contextmanager
+    def kurtarma_noktasi(self):
+        """İşlem içinde tek bir satırın hatasını izole eder: hata olursa yalnızca o satırın değişiklikleri geri alınır."""
+        with self._kilit:
+            self._sp = getattr(self, "_sp", 0) + 1
+            ad = f"sp_{self._sp}"
+            self._calistir(f"SAVEPOINT {ad}")
+            try:
+                yield self
+                self._calistir(f"RELEASE SAVEPOINT {ad}")
+            except Exception:
+                self._calistir(f"ROLLBACK TO SAVEPOINT {ad}")
+                self._calistir(f"RELEASE SAVEPOINT {ad}")
+                raise
+
     def _calistir(self, sql: str, parametreler: Iterable[Any] = ()):
         sql = self._sql(sql)
         parametreler = tuple(parametreler)

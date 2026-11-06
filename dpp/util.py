@@ -7,7 +7,8 @@ from datetime import date, datetime
 from typing import Optional
 
 _TR_MAP = str.maketrans("çğıöşüâîû", "cgiosuaiu")
-_BOS = {"", "nan", "none", "null", "-", "—", "n/a", "na", "nat"}
+_BOS = {"", "nan", "none", "null", "-", "—", "n/a", "na", "nat", "#n/a", "#yok", "#value!", "#deger!", "#ref!", "#basv!",
+        "#div/0!", "#sayi/0!", "#name?", "#ad?", "#null!", "#bos!", "#num!", "#sayi!", "?", "yok bilgi", "bilinmiyor bilgi"}
 
 
 def tr_norm(deger) -> str:
@@ -154,17 +155,24 @@ def gtip_dogrula(deger) -> tuple[bool, str]:
 
 # --- Malzeme bileşimi ------------------------------------------------------
 
-def malzeme_ayristir(deger) -> list[tuple[str, float]]:
-    """'Pamuk:95;Elastan:5' veya '%95 Pamuk, %5 Elastan' biçimlerini okur."""
+def malzeme_ayristir(deger) -> list[tuple[str, Optional[float]]]:
+    """Tek hücredeki bileşimi okur. Desteklenen biçimler:
+    'Pamuk:95;Elastan:5' · '%60 Pamuk, %40 Polyester' · '95% Cotton 5% Elastane' · 'Pamuk 95 / Elastan 5' · 'Pamuk'
+    Yüzde içermeyen tek malzeme %100 kabul edilir; birden fazla malzemede oran boş bırakılır."""
     s = metin(deger)
     if not s:
         return []
-    sonuc = []
-    for parca in [p for p in re.split(r"[;\n/]+|,(?!\d)", s) if p.strip()]:
-        m = re.search(r"(\d+(?:[.,]\d+)?)", parca)
-        if not m:
-            continue
-        oran = float(m.group(1).replace(",", "."))
-        ad = (parca[: m.start()] + parca[m.end():]).replace("%", "").replace(":", "").strip(" -=")
-        sonuc.append((ad or "Belirtilmemiş", oran))
-    return sonuc
+    sayi_re = r"(\d+(?:[.,]\d+)?)"
+    ad_re = r"([^\d%;,/\n+:=]+?)"
+    if re.match(r"^\s*%?\s*\d", s):
+        bulunan = re.findall(r"%?\s*" + sayi_re + r"\s*%?\s*" + ad_re + r"(?=\s*(?:[;,/\n+]|%?\s*\d|$))", s)
+        sonuc = [(ad.strip(" -="), float(o.replace(",", "."))) for o, ad in bulunan if ad.strip(" -=")]
+    else:
+        bulunan = re.findall(ad_re + r"\s*[:=]?\s*%?\s*" + sayi_re + r"\s*%?", s)
+        sonuc = [(ad.strip(" -="), float(o.replace(",", "."))) for ad, o in bulunan if ad.strip(" -=")]
+    if sonuc:
+        return [(ad, o) for ad, o in sonuc]
+    adlar = [p.strip(" -=") for p in re.split(r"[;,/\n+]| ve | and ", s) if p.strip(" -=")]
+    if len(adlar) == 1:
+        return [(adlar[0], 100.0)]
+    return [(a, None) for a in adlar]
